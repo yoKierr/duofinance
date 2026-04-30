@@ -1,2 +1,6 @@
-# DuoFinance
-Дипломный проект.
+# Дуофинанс
+Place holder for text
+-
+-
+-
+-

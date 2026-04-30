@@ -1,0 +1,32 @@
+-- Сид миграции НЕ ДОБАВЛЯТЬ В ПРОД / MASTER
+
+BEGIN;
+
+-- Remove inserted steps
+DELETE FROM level_steps WHERE id IN (2101,2102,2103,2104,2105,2106,2107,2108,2109,2110,2111,2112,2113,2114,2115,2116,2117,2118,2119,2120,2121,2122);
+
+-- Remove inserted choices
+DELETE FROM choices WHERE id IN (4001,4002,4003,4004,4005,4006,4007,4008,4009,4010,4011,4012,4013,4014,4015,4016,4017,4018,4019,4020,4021,4022,4023,4024,4025,4026,4027,4028,4029,4030,4031,4032,4033,4034,4035,4036,4037,4038,4039,4040,4041,4042,4043,4044,4045,4046,4047,4048,4049,4050,4051,4052,4053,4054,4055,4056,4057);
+
+-- Remove user achievement assignments (must be before achievements)
+DELETE FROM user_achievements WHERE id IN (6001,6002,6003);
+
+-- Remove inserted reward transactions
+DELETE FROM reward_txs WHERE id IN (7001,7002,7003,7004,7005,7006,7007,7008,7009,7010,7011,7012);
+
+-- Remove inserted questions
+DELETE FROM questions WHERE id IN (3001,3002,3003,3004,3005,3006,3007,3008,3009,3010,3011,3012,3013,3014,3015,3016,3017,3018,3019);
+
+-- Remove inserted levels
+DELETE FROM levels WHERE id IN (2001,2002,2003);
+
+-- Remove inserted achievements (after user_achievements)
+DELETE FROM achievements WHERE id IN (5001,5002,5003,5004,5005,5006,5007,5008);
+
+-- Remove demo profile and user
+DELETE FROM profiles WHERE id = 1001;
+DELETE FROM users WHERE id = 1001;
+
+COMMIT;
+
+

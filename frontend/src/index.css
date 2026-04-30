@@ -1,0 +1,60 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 0 0% 20%;
+    --card: 0 0% 100%;
+    --card-foreground: 0 0% 20%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 0 0% 20%;
+    --primary: 88 65% 54%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 214 32% 91%;
+    --secondary-foreground: 222 47% 11%;
+    --muted: 210 40% 96%;
+    --muted-foreground: 215 16% 47%;
+    --accent: 210 40% 96%;
+    --accent-foreground: 222 47% 11%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 214 32% 91%;
+    --input: 214 32% 91%;
+    --ring: 88 65% 54%;
+    --radius: 1rem;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-family: var(--font-nunito), sans-serif;
+  }
+}
+
+@layer components {
+  .duofinance-button {
+    @apply font-bold uppercase tracking-wide shadow-md transition-all;
+    @apply active:shadow-sm active:translate-y-1;
+    border-radius: 0.5rem !important;
+  }
+
+  button.duofinance-button {
+    border-radius: 0.5rem !important;
+  }
+
+  .duofinance-button-primary {
+    @apply bg-[#00e3c1] text-white border-b-4 border-[#00b89a];
+    @apply hover:bg-[#00d4b3] active:border-b-2;
+  }
+
+  .duofinance-button-secondary {
+    @apply bg-white text-[#1CB0F6] border-2 border-[#1CB0F6];
+    @apply hover:bg-[#E5F4FC];
+  }
+}

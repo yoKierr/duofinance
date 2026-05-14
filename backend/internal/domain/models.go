@@ -40,12 +40,11 @@ type Profile struct {
 	Meta   datatypes.JSON // дополнительная мета
 }
 
-// Level — карточка уровня (тема, сложность, награда, набор шагов).
+// Level — карточка уровня (тема, награда, набор шагов).
 type Level struct {
 	Model
 	Title        string      `gorm:"size:255;not null"`
 	Topic        string      `gorm:"size:255"`
-	Difficulty   string      `gorm:"size:50;index"` // e.g. easy|medium|hard
 	RewardPoints int         `gorm:"not null;default:0"`
 	IsActive     bool        `gorm:"not null;default:true"`
 	Steps        []LevelStep `gorm:"constraint:OnUpdate:CASCADE,OnDelete:CASCADE"`

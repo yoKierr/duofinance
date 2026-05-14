@@ -105,10 +105,6 @@ import type {
       return this.request<Level>(`/v1/levels/${id}`);
     }
   
-    async getLevelsByDifficulty(difficulty: string): Promise<Level[]> {
-      return this.request<Level[]>(`/v1/levels/difficulty/${difficulty}`);
-    }
-  
     async getLevelsByTopic(topic: string): Promise<Level[]> {
       return this.request<Level[]>(`/v1/levels/topic/${topic}`);
     }

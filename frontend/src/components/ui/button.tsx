@@ -8,21 +8,21 @@ interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
 export function Button({ children, className = '', variant = 'default', ...props }: ButtonProps) {
   const baseClasses = 'px-4 py-2 font-medium transition-colors'
 
-  // Если передан кастомный класс duofinance-button, не добавляем наши variant стили,
+  // Если передан кастомный класс finstart-button, не добавляем наши variant стили,
   // чтобы не конфликтовать с внешней палитрой/бордерами
-  const isDuofinanceStyled = className.includes('duofinance-button')
+  const isFinstartStyled = className.includes('finstart-button')
 
-  // Не добавляем rounded-lg если используется duofinance-button класс
-  const roundedClass = isDuofinanceStyled ? '' : 'rounded-lg'
+  // Не добавляем rounded-lg если используется finstart-button класс
+  const roundedClass = isFinstartStyled ? '' : 'rounded-lg'
 
   const variantClasses: Record<string, string> = {
-    default: 'bg-blue-600 text-white hover:bg-blue-700',
-    ghost: 'bg-transparent text-gray-600 hover:bg-gray-100',
-    outline: 'border border-gray-300 text-gray-700 hover:bg-gray-50',
+    default: 'bg-white text-neutral-950 border border-zinc-500 hover:bg-zinc-200',
+    ghost: 'bg-transparent text-zinc-300 hover:bg-zinc-800 hover:text-white',
+    outline: 'border border-zinc-600 text-zinc-100 hover:bg-zinc-800',
     custom: ''
   }
 
-  const effectiveVariant = isDuofinanceStyled ? 'custom' : variant
+  const effectiveVariant = isFinstartStyled ? 'custom' : variant
 
   return (
     <button

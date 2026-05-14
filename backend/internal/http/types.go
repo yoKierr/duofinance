@@ -73,6 +73,11 @@ type AnswerRequest struct {
 	ChoiceIDs  []uint `json:"choice_ids" binding:"required"`
 }
 
+// TextStepAckRequest - отметка просмотра текстовой карточки
+type TextStepAckRequest struct {
+	LevelStepID uint `json:"level_step_id" binding:"required"`
+}
+
 // AnswerResponse - ответ на вопрос
 type AnswerResponse struct {
 	Correct      bool          `json:"correct"`
@@ -99,9 +104,18 @@ type LevelInfo struct {
 	ID           uint   `json:"id"`
 	Title        string `json:"title"`
 	Topic        string `json:"topic"`
-	Difficulty   string `json:"difficulty"`
 	RewardPoints int    `json:"reward_points"`
 	IsActive     bool   `json:"is_active"`
+}
+
+// CourseInfo — курс в каталоге (пока часть данных статична в хендлере).
+type CourseInfo struct {
+	ID          string `json:"id"`
+	Slug        string `json:"slug"`
+	Title       string `json:"title"`
+	Description string `json:"description"`
+	Available   bool   `json:"available"`
+	SortOrder   int    `json:"sort_order"`
 }
 
 // LevelDetail - детальная информация об уровне

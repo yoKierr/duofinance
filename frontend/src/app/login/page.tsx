@@ -20,7 +20,7 @@ export default function LoginPage() {
 
     try {
       await login({ email, password });
-      navigate('/learn');
+      navigate('/courses');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Login failed');
     } finally {
@@ -29,31 +29,26 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen bg-white flex flex-col">
+    <div className="min-h-screen bg-neutral-950 text-zinc-100 flex flex-col">
       <header className="container mx-auto px-4 py-6">
         <Link to="/" className="flex items-center gap-2">
-          <img 
-            src="/logo-removebg-preview.png" 
-            alt="DuoFinance" 
-            className="w-10 h-10"
-          />
-          <span className="text-2xl font-bold text-gray-800">duofinance</span>
+          <span className="text-2xl font-bold text-white">финстарт</span>
         </Link>
       </header>
 
       <div className="flex-1 flex items-center justify-center px-4">
         <div className="w-full max-w-md">
-          <h1 className="text-3xl font-bold text-center mb-8">Log in</h1>
+          <h1 className="text-3xl font-bold text-center mb-8 text-white">Вход</h1>
 
           <form onSubmit={handleSubmit} className="space-y-6">
             {error && (
-              <div className="p-4 bg-red-50 border-2 border-red-500 rounded-xl text-red-700 text-center">
+              <div className="p-4 bg-red-950/50 border-2 border-red-500 rounded-xl text-red-300 text-center">
                 {error}
               </div>
             )}
 
             <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
+              <Label htmlFor="email">Почта</Label>
               <Input
                 id="email"
                 type="email"
@@ -65,7 +60,7 @@ export default function LoginPage() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="password">Password</Label>
+              <Label htmlFor="password">Пароль</Label>
               <Input
                 id="password"
                 type="password"
@@ -79,17 +74,17 @@ export default function LoginPage() {
             <Button
               type="submit"
               disabled={loading}
-              className="w-full h-12 duofinance-button duofinance-button-primary"
+              className="w-full h-12 finstart-button finstart-button-primary"
             >
-              {loading ? 'Logging in...' : 'Log In'}
+              {loading ? 'Вход...' : 'Войти'}
             </Button>
           </form>
 
           <div className="mt-8 text-center">
-            <p className="text-gray-600">
-              Don't have an account?{' '}
-              <Link to="/register" className="text-[#1CB0F6] font-bold hover:underline">
-                Sign up
+            <p className="text-zinc-400">
+              Нет аккаунта?{' '}
+              <Link to="/register" className="text-white font-bold hover:underline">
+                Регистрация
               </Link>
             </p>
           </div>

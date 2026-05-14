@@ -35,9 +35,6 @@ type LevelService interface {
 	// Получить детали уровня
 	GetLevel(ctx context.Context, id uint) (*domain.Level, error)
 
-	// Получить уровни по сложности
-	GetLevelsByDifficulty(ctx context.Context, difficulty string) ([]*domain.Level, error)
-
 	// Получить уровни по теме
 	GetLevelsByTopic(ctx context.Context, topic string) ([]*domain.Level, error)
 
@@ -50,8 +47,11 @@ type AttemptService interface {
 	// Начать новую попытку прохождения уровня
 	StartAttempt(ctx context.Context, userID, levelID uint) (*domain.Attempt, error)
 
-	// Получить следующий вопрос в попытке
-	GetNextQuestion(ctx context.Context, attemptID uint) (*domain.Question, error)
+	// Получить следующий шаг урока (текстовая карточка или вопрос)
+	GetNextLessonStep(ctx context.Context, attemptID uint) (*NextLessonStep, error)
+
+	// Отметить просмотр текстового шага (без вопроса)
+	AcknowledgeTextStep(ctx context.Context, attemptID, userID, levelStepID uint) error
 
 	// Ответить на вопрос
 	AnswerQuestion(ctx context.Context, attemptID, questionID uint, choiceIDs []uint) (bool, string, error)

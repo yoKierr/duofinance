@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"sort"
 	"time"
 
 	"github.com/ImCtyz/duofinance/backend/internal/auth"
@@ -319,14 +320,6 @@ func (s *levelService) GetLevel(ctx context.Context, id uint) (*domain.Level, er
 	return level, nil
 }
 
-func (s *levelService) GetLevelsByDifficulty(ctx context.Context, difficulty string) ([]*domain.Level, error) {
-	levels, err := s.levelRepo.GetByDifficulty(ctx, difficulty)
-	if err != nil {
-		return nil, err
-	}
-	return levels, nil
-}
-
 func (s *levelService) GetLevelsByTopic(ctx context.Context, topic string) ([]*domain.Level, error) {
 	levels, err := s.levelRepo.GetByTopic(ctx, topic)
 	if err != nil {
@@ -467,16 +460,14 @@ func (s *attemptService) StartAttempt(ctx context.Context, userID, levelID uint)
 	if existingAttempt != nil {
 		// Санитарная проверка на "застрявшие" попытки: если нет больше вопросов, но статус in_progress — отменяем и создаем новую
 		if existingAttempt.Status == domain.AttemptInProgress {
-			if _, err := s.GetNextQuestion(ctx, existingAttempt.ID); err != nil {
-				if err.Error() == "no more questions" {
-					// отменяем попытку и продолжаем создание новой
+			next, err2 := s.GetNextLessonStep(ctx, existingAttempt.ID)
+			if err2 != nil {
+				if errors.Is(err2, ErrNoMoreLessonSteps) {
 					_ = s.CancelAttempt(ctx, existingAttempt.ID, userID)
 				} else {
-					// при других ошибках возвращаем существующую, чтобы не терять прогресс
 					return existingAttempt, nil
 				}
-			} else {
-				// есть следующий вопрос — возвращаем текущую активную попытку
+			} else if next != nil {
 				return existingAttempt, nil
 			}
 		} else {
@@ -501,8 +492,7 @@ func (s *attemptService) StartAttempt(ctx context.Context, userID, levelID uint)
 	return attempt, nil
 }
 
-func (s *attemptService) GetNextQuestion(ctx context.Context, attemptID uint) (*domain.Question, error) {
-	// Получаем попытку
+func (s *attemptService) GetNextLessonStep(ctx context.Context, attemptID uint) (*NextLessonStep, error) {
 	attempt, err := s.attemptRepo.GetByID(ctx, attemptID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -515,19 +505,16 @@ func (s *attemptService) GetNextQuestion(ctx context.Context, attemptID uint) (*
 		return nil, errors.New("attempt is not in progress")
 	}
 
-	// Получаем уровень с шагами
 	level, err := s.levelRepo.GetWithSteps(ctx, attempt.LevelID)
 	if err != nil {
 		return nil, err
 	}
 
-	// Получаем уже отвеченные шаги
 	answeredSteps, err := s.attemptRepo.GetSteps(ctx, attemptID)
 	if err != nil {
 		return nil, err
 	}
 
-	// Создаем карту отвеченных шагов
 	answeredMap := make(map[uint]bool)
 	for _, step := range answeredSteps {
 		if step.LevelStepID != 0 {
@@ -535,25 +522,114 @@ func (s *attemptService) GetNextQuestion(ctx context.Context, attemptID uint) (*
 		}
 	}
 
-	// Находим первый неотвеченный вопрос
-	for _, step := range level.Steps {
-		if step.Type == "question" && !answeredMap[step.ID] {
-			if step.QuestionID != nil {
-				// Получаем вопрос с вариантами ответов
-				question, err := s.questionRepo.GetWithChoices(ctx, *step.QuestionID)
-				if err != nil {
-					return nil, err
+	steps := make([]*domain.LevelStep, len(level.Steps))
+	for i := range level.Steps {
+		steps[i] = &level.Steps[i]
+	}
+	sort.Slice(steps, func(i, j int) bool {
+		return steps[i].Order < steps[j].Order
+	})
+
+	for _, step := range steps {
+		if answeredMap[step.ID] {
+			continue
+		}
+		switch step.Type {
+		case "text":
+			body := ""
+			if len(step.Payload) > 0 {
+				var p struct {
+					Body string `json:"body"`
 				}
-				return question, nil
+				_ = json.Unmarshal(step.Payload, &p)
+				body = p.Body
 			}
+			title := step.Title
+			return &NextLessonStep{
+				Kind:        LessonStepKindText,
+				LevelStepID: step.ID,
+				Title:       title,
+				Body:        body,
+			}, nil
+		case "question":
+			if step.QuestionID == nil {
+				continue
+			}
+			question, err := s.questionRepo.GetWithChoices(ctx, *step.QuestionID)
+			if err != nil {
+				return nil, err
+			}
+			return &NextLessonStep{
+				Kind:        LessonStepKindQuestion,
+				LevelStepID: step.ID,
+				Question:    question,
+			}, nil
+		default:
+			continue
 		}
 	}
 
-	return nil, errors.New("no more questions")
+	return nil, ErrNoMoreLessonSteps
+}
+
+func (s *attemptService) AcknowledgeTextStep(ctx context.Context, attemptID, userID, levelStepID uint) error {
+	attempt, err := s.attemptRepo.GetByID(ctx, attemptID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return errors.New("attempt not found")
+		}
+		return err
+	}
+	if attempt.UserID != userID {
+		return errors.New("forbidden")
+	}
+	if attempt.Status != "in_progress" {
+		return errors.New("attempt is not in progress")
+	}
+
+	level, err := s.levelRepo.GetWithSteps(ctx, attempt.LevelID)
+	if err != nil {
+		return err
+	}
+
+	var target *domain.LevelStep
+	for i := range level.Steps {
+		if level.Steps[i].ID == levelStepID {
+			target = &level.Steps[i]
+			break
+		}
+	}
+	if target == nil {
+		return errors.New("level step not found")
+	}
+	if target.Type != "text" {
+		return errors.New("not a text step")
+	}
+
+	answered, err := s.attemptRepo.GetSteps(ctx, attemptID)
+	if err != nil {
+		return err
+	}
+	for _, st := range answered {
+		if st.LevelStepID == levelStepID {
+			return nil
+		}
+	}
+
+	responseJSON, _ := json.Marshal(map[string]interface{}{"viewed": true, "at": time.Now().Format(time.RFC3339)})
+	attemptStep := &domain.AttemptStep{
+		AttemptID:   attemptID,
+		LevelStepID: levelStepID,
+		QuestionID:  nil,
+		StepOrder:   len(answered) + 1,
+		Response:    datatypes.JSON(responseJSON),
+		Correct:     true,
+		DurationMs:  0,
+	}
+	return s.attemptRepo.AddStep(ctx, attemptStep)
 }
 
 func (s *attemptService) AnswerQuestion(ctx context.Context, attemptID, questionID uint, choiceIDs []uint) (bool, string, error) {
-	// Получаем попытку
 	attempt, err := s.attemptRepo.GetByID(ctx, attemptID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -566,13 +642,11 @@ func (s *attemptService) AnswerQuestion(ctx context.Context, attemptID, question
 		return false, "", errors.New("attempt is not in progress")
 	}
 
-	// Получаем вопрос с правильными ответами
 	question, err := s.questionRepo.GetWithChoices(ctx, questionID)
 	if err != nil {
 		return false, "", err
 	}
 
-	// Получаем правильные варианты ответов
 	var correctChoiceIDs []uint
 	for _, choice := range question.Choices {
 		if choice.IsCorrect {
@@ -580,10 +654,8 @@ func (s *attemptService) AnswerQuestion(ctx context.Context, attemptID, question
 		}
 	}
 
-	// Проверяем правильность ответа
 	isCorrect := compareChoiceIDs(choiceIDs, correctChoiceIDs)
 
-	// Находим LevelStepID для этого вопроса
 	level, err := s.levelRepo.GetWithSteps(ctx, attempt.LevelID)
 	if err != nil {
 		return false, "", err
@@ -597,7 +669,6 @@ func (s *attemptService) AnswerQuestion(ctx context.Context, attemptID, question
 		}
 	}
 
-	// Создаем или обновляем шаг попытки
 	responseData := map[string]interface{}{
 		"question_id": questionID,
 		"choice_ids":  choiceIDs,
@@ -605,14 +676,19 @@ func (s *attemptService) AnswerQuestion(ctx context.Context, attemptID, question
 	}
 	responseJSON, _ := json.Marshal(responseData)
 
+	answered, err := s.attemptRepo.GetSteps(ctx, attemptID)
+	if err != nil {
+		return false, "", err
+	}
+
 	attemptStep := &domain.AttemptStep{
 		AttemptID:   attemptID,
 		LevelStepID: levelStepID,
 		QuestionID:  &questionID,
-		StepOrder:   len(attempt.Steps) + 1,
+		StepOrder:   len(answered) + 1,
 		Response:    datatypes.JSON(responseJSON),
 		Correct:     isCorrect,
-		DurationMs:  0, // Можно добавить подсчет времени
+		DurationMs:  0,
 	}
 
 	err = s.attemptRepo.AddStep(ctx, attemptStep)
@@ -770,9 +846,11 @@ func (s *attemptService) CompleteAttempt(ctx context.Context, attemptID uint) (*
 	// Вычисляем итоговый балл (точность) с учетом числа ошибок
 	score := 0
 	if totalQuestions > 0 {
-		// Нормируем суммарный вклад по количеству вопросов
 		normalized := (contributionSum / float64(totalQuestions)) * 100.0
 		score = int(normalized + 0.5) // округление
+	} else {
+		// Только информационные карточки без квиза
+		score = 100
 	}
 
 	// Обновляем попытку

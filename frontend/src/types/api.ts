@@ -25,7 +25,6 @@ export interface Level {
   id: number
   title: string
   topic: string
-  difficulty: string
   reward_points: number
   description?: string
   is_active: boolean
@@ -34,6 +33,16 @@ export interface Level {
   progress?: number
   icon?: string
   steps_count?: number
+}
+
+/** Курс из GET /v1/courses */
+export interface Course {
+  id: string
+  slug: string
+  title: string
+  description: string
+  available: boolean
+  sort_order: number
 }
 
 export interface UserStats {

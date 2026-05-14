@@ -116,18 +116,6 @@ func (r *levelRepo) GetWithSteps(ctx context.Context, id uint) (*domain.Level, e
 	return &level, nil
 }
 
-func (r *levelRepo) GetByDifficulty(ctx context.Context, difficulty string) ([]*domain.Level, error) {
-	var levels []*domain.Level
-	err := r.db.WithContext(ctx).
-		Where("is_active = ? AND difficulty = ?", true, difficulty).
-		Order("id ASC").
-		Find(&levels).Error
-	if err != nil {
-		return nil, err
-	}
-	return levels, nil
-}
-
 func (r *levelRepo) GetByTopic(ctx context.Context, topic string) ([]*domain.Level, error) {
 	var levels []*domain.Level
 	err := r.db.WithContext(ctx).

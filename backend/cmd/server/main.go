@@ -3,6 +3,8 @@ package main
 import (
 	"fmt"
 	"log"
+	stdhttp "net/http"
+	"os"
 	"time"
 
 	"github.com/ImCtyz/duofinance/backend/config"
@@ -72,6 +74,15 @@ func main() {
 
 	// Создаем Gin роутер
 	router := gin.Default()
+
+	// Лендинг по корню (редирект на фронтенд)
+	frontendURL := os.Getenv("FRONTEND_URL")
+	if frontendURL == "" {
+		frontendURL = "http://localhost:3000/"
+	}
+	router.GET("/", func(c *gin.Context) {
+		c.Redirect(stdhttp.StatusTemporaryRedirect, frontendURL)
+	})
 
 	// Настраиваем маршруты
 	http.SetupRoutes(router, services, db)

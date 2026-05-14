@@ -1,10 +1,11 @@
 {
-  "name": "duofinance-frontend",
+  "name": "finstart-frontend",
   "version": "0.1.0",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:docker": "docker compose -f ../docker-compose.yml --profile dev up --build frontend-dev",
     "build": "tsc && vite build",
     "preview": "vite preview",
     "lint": "tsc --noEmit",
@@ -15,11 +16,12 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "lucide-react": "^0.475.0",
+    "motion": "^12.38.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router-dom": "^7.9.4",
     "same-runtime": "^0.0.1",
-    "tailwind-merge": "^3.3.0",
+    "tailwind-merge": "^3.6.0",
     "tailwindcss-animate": "^1.0.7"
   },
   "devDependencies": {

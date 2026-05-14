@@ -39,12 +39,14 @@ func SetupRoutes(r *gin.Engine, services *Services, db *gorm.DB) {
 			protected.PUT("/me/profile", UpdateProfileHandler(services.User))
 			protected.GET("/me/stats", GetUserStatsHandler(services.User))
 
+			// Каталог курсов
+			protected.GET("/courses", GetCoursesHandler())
+
 			// Уровни/уроки
 			levels := protected.Group("/levels")
 			{
 				levels.GET("", GetLevelsHandler(services.Level))
 				levels.GET("/:id", GetLevelHandler(services.Level))
-				levels.GET("/difficulty/:difficulty", GetLevelsByDifficultyHandler(services.Level))
 				levels.GET("/topic/:topic", GetLevelsByTopicHandler(services.Level))
 			}
 
@@ -55,6 +57,7 @@ func SetupRoutes(r *gin.Engine, services *Services, db *gorm.DB) {
 				attempts.GET("", GetUserAttemptsHandler(services.Attempt))
 				attempts.GET("/:id", GetAttemptHandler(services.Attempt))
 				attempts.GET("/:id/next", GetNextQuestionHandler(services.Attempt))
+				attempts.POST("/:id/text-step", AcknowledgeTextStepHandler(services.Attempt))
 				attempts.POST("/:id/answer", AnswerQuestionHandler(services.Attempt))
 				attempts.POST("/:id/complete", CompleteAttemptHandler(services.Attempt))
 				attempts.POST("/:id/cancel", CancelAttemptHandler(services.Attempt))

@@ -44,9 +44,6 @@ type LevelRepo interface {
 	// Получить уровень с шагами
 	GetWithSteps(ctx context.Context, id uint) (*domain.Level, error)
 
-	// Получить уровни по сложности
-	GetByDifficulty(ctx context.Context, difficulty string) ([]*domain.Level, error)
-
 	// Получить уровни по теме
 	GetByTopic(ctx context.Context, topic string) ([]*domain.Level, error)
 }

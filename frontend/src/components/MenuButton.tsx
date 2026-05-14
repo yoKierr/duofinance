@@ -9,7 +9,7 @@ export function MenuButton({ onClick, isOpen }: MenuButtonProps) {
   return (
     <button
       onClick={onClick}
-      className="p-2 rounded-lg text-gray-600 hover:bg-gray-100 hover:text-gray-900 transition-all duration-200 hover:scale-110 lg:hidden"
+      className="p-2 rounded-lg text-zinc-400 hover:bg-zinc-800 hover:text-white transition-all duration-200 hover:scale-110 lg:hidden"
       aria-label="Toggle menu"
     >
       <svg

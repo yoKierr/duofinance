@@ -4,25 +4,25 @@
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 0 0% 20%;
-    --card: 0 0% 100%;
-    --card-foreground: 0 0% 20%;
-    --popover: 0 0% 100%;
-    --popover-foreground: 0 0% 20%;
-    --primary: 88 65% 54%;
+    --background: 240 10% 4%;
+    --foreground: 0 0% 96%;
+    --card: 240 6% 10%;
+    --card-foreground: 0 0% 96%;
+    --popover: 240 6% 10%;
+    --popover-foreground: 0 0% 96%;
+    --primary: 0 0% 9%;
     --primary-foreground: 0 0% 100%;
-    --secondary: 214 32% 91%;
-    --secondary-foreground: 222 47% 11%;
-    --muted: 210 40% 96%;
-    --muted-foreground: 215 16% 47%;
-    --accent: 210 40% 96%;
-    --accent-foreground: 222 47% 11%;
+    --secondary: 240 4% 16%;
+    --secondary-foreground: 0 0% 96%;
+    --muted: 240 4% 16%;
+    --muted-foreground: 240 5% 65%;
+    --accent: 240 4% 16%;
+    --accent-foreground: 0 0% 96%;
     --destructive: 0 84% 60%;
     --destructive-foreground: 0 0% 100%;
-    --border: 214 32% 91%;
-    --input: 214 32% 91%;
-    --ring: 88 65% 54%;
+    --border: 240 4% 22%;
+    --input: 240 4% 22%;
+    --ring: 0 0% 9%;
     --radius: 1rem;
   }
 }
@@ -38,23 +38,21 @@
 }
 
 @layer components {
-  .duofinance-button {
-    @apply font-bold uppercase tracking-wide shadow-md transition-all;
-    @apply active:shadow-sm active:translate-y-1;
+  .finstart-button {
+    @apply font-bold uppercase tracking-wide transition-colors;
+  }
+
+  button.finstart-button {
     border-radius: 0.5rem !important;
   }
 
-  button.duofinance-button {
-    border-radius: 0.5rem !important;
+  .finstart-button-primary {
+    @apply border border-zinc-400 bg-white text-neutral-950;
+    @apply hover:border-zinc-300 hover:bg-zinc-200 active:bg-zinc-300;
   }
 
-  .duofinance-button-primary {
-    @apply bg-[#00e3c1] text-white border-b-4 border-[#00b89a];
-    @apply hover:bg-[#00d4b3] active:border-b-2;
-  }
-
-  .duofinance-button-secondary {
-    @apply bg-white text-[#1CB0F6] border-2 border-[#1CB0F6];
-    @apply hover:bg-[#E5F4FC];
+  .finstart-button-secondary {
+    @apply border-2 border-zinc-400 bg-transparent text-zinc-100;
+    @apply hover:border-zinc-300 hover:bg-zinc-800;
   }
 }

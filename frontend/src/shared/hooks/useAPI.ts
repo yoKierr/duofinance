@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { apiClient } from '@/shared/api/client'
-import type { Level, Achievement, UserStats, Attempt } from '@/types/api'
+import type { Level, Achievement, UserStats, Attempt, Course } from '@/types/api'
 
 // Хук для получения уровней
 export function useLevels() {
@@ -78,6 +78,29 @@ export function useLevels() {
   }, [])
 
   return { levels, loading, error }
+}
+
+export function useCourses() {
+  const [courses, setCourses] = useState<Course[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    const fetchCourses = async () => {
+      try {
+        setLoading(true)
+        const data = await apiClient.getCourses()
+        setCourses(data)
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to fetch courses')
+      } finally {
+        setLoading(false)
+      }
+    }
+    fetchCourses()
+  }, [])
+
+  return { courses, loading, error }
 }
 
 // Хук для получения достижений

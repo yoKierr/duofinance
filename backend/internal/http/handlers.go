@@ -1,6 +1,7 @@
 package http
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 	"time"
@@ -287,6 +288,30 @@ func MeHandler(authService core.AuthService, userService core.UserService) gin.H
 
 // Level handlers
 
+// GetCoursesHandler — список курсов (пока один доступный курс без таблицы в БД).
+func GetCoursesHandler() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		courses := []CourseInfo{
+			{
+				ID:    "1",
+				Slug:  "financial-literacy-basics",
+				Title: "Основы финансовой грамотности",
+				Description: "Базовый курс: доход и расход, бюджет, сбережения и осознанные траты. " +
+					"Короткие уроки с проверкой усвоения.",
+				Available: true,
+				SortOrder: 1,
+			},
+		}
+		c.JSON(http.StatusOK, APIResponse{
+			Success: true,
+			Data:    courses,
+			Meta: &Meta{
+				Total: len(courses),
+			},
+		})
+	}
+}
+
 // GetLevelsHandler - получение списка уровней
 func GetLevelsHandler(levelService core.LevelService) gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -308,7 +333,6 @@ func GetLevelsHandler(levelService core.LevelService) gin.HandlerFunc {
 				ID:           level.ID,
 				Title:        level.Title,
 				Topic:        level.Topic,
-				Difficulty:   level.Difficulty,
 				RewardPoints: level.RewardPoints,
 				IsActive:     level.IsActive,
 			})
@@ -381,50 +405,11 @@ func GetLevelHandler(levelService core.LevelService) gin.HandlerFunc {
 				"id":            level.ID,
 				"title":         level.Title,
 				"topic":         level.Topic,
-				"difficulty":    level.Difficulty,
 				"reward_points": level.RewardPoints,
 				"is_active":     level.IsActive,
 				"description":   "",
 				"steps_count":   len(level.Steps),
 				"steps":         steps,
-			},
-		})
-	}
-}
-
-// GetLevelsByDifficultyHandler - получение уровней по сложности
-func GetLevelsByDifficultyHandler(levelService core.LevelService) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		difficulty := c.Param("difficulty")
-		levels, err := levelService.GetLevelsByDifficulty(c.Request.Context(), difficulty)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, APIResponse{
-				Success: false,
-				Error: &APIError{
-					Code:    ErrCodeInternal,
-					Message: "Failed to get levels by difficulty",
-				},
-			})
-			return
-		}
-
-		var levelInfos []LevelInfo
-		for _, level := range levels {
-			levelInfos = append(levelInfos, LevelInfo{
-				ID:           level.ID,
-				Title:        level.Title,
-				Topic:        level.Topic,
-				Difficulty:   level.Difficulty,
-				RewardPoints: level.RewardPoints,
-				IsActive:     level.IsActive,
-			})
-		}
-
-		c.JSON(http.StatusOK, APIResponse{
-			Success: true,
-			Data:    levelInfos,
-			Meta: &Meta{
-				Total: len(levelInfos),
 			},
 		})
 	}
@@ -452,7 +437,6 @@ func GetLevelsByTopicHandler(levelService core.LevelService) gin.HandlerFunc {
 				ID:           level.ID,
 				Title:        level.Title,
 				Topic:        level.Topic,
-				Difficulty:   level.Difficulty,
 				RewardPoints: level.RewardPoints,
 				IsActive:     level.IsActive,
 			})
@@ -978,7 +962,7 @@ func GetAttemptHandler(attemptService core.AttemptService) gin.HandlerFunc {
 	}
 }
 
-// GetNextQuestionHandler - получение следующего вопроса
+// GetNextQuestionHandler - следующий шаг урока (текст или вопрос)
 func GetNextQuestionHandler(attemptService core.AttemptService) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		idStr := c.Param("id")
@@ -994,14 +978,14 @@ func GetNextQuestionHandler(attemptService core.AttemptService) gin.HandlerFunc 
 			return
 		}
 
-		question, err := attemptService.GetNextQuestion(c.Request.Context(), uint(attemptID))
+		next, err := attemptService.GetNextLessonStep(c.Request.Context(), uint(attemptID))
 		if err != nil {
-			if err.Error() == "no more questions" {
+			if errors.Is(err, core.ErrNoMoreLessonSteps) {
 				c.JSON(http.StatusOK, APIResponse{
 					Success: true,
 					Data: gin.H{
-						"message":  "No more questions",
-						"question": nil,
+						"kind":    core.LessonStepKindNone,
+						"message": "No more steps",
 					},
 				})
 				return
@@ -1016,35 +1000,135 @@ func GetNextQuestionHandler(attemptService core.AttemptService) gin.HandlerFunc 
 			return
 		}
 
-		if question == nil {
+		if next == nil {
 			c.JSON(http.StatusOK, APIResponse{
 				Success: true,
 				Data: gin.H{
-					"message":  "No question available",
-					"question": nil,
+					"kind":    core.LessonStepKindNone,
+					"message": "No step available",
 				},
 			})
 			return
 		}
 
-		var choices []ChoiceInfo
-		for _, choice := range question.Choices {
-			choices = append(choices, ChoiceInfo{
-				ID:   choice.ID,
-				Text: choice.Text,
+		switch next.Kind {
+		case core.LessonStepKindText:
+			c.JSON(http.StatusOK, APIResponse{
+				Success: true,
+				Data: gin.H{
+					"kind":          next.Kind,
+					"level_step_id": next.LevelStepID,
+					"title":         next.Title,
+					"body":          next.Body,
+				},
+			})
+			return
+		case core.LessonStepKindQuestion:
+			if next.Question == nil {
+				c.JSON(http.StatusOK, APIResponse{
+					Success: true,
+					Data: gin.H{
+						"kind":    core.LessonStepKindNone,
+						"message": "No question available",
+					},
+				})
+				return
+			}
+			q := next.Question
+			var choices []ChoiceInfo
+			for _, choice := range q.Choices {
+				choices = append(choices, ChoiceInfo{
+					ID:   choice.ID,
+					Text: choice.Text,
+				})
+			}
+			questionInfo := QuestionInfo{
+				ID:          q.ID,
+				Prompt:      q.Prompt,
+				MultiSelect: q.MultiSelect,
+				Choices:     choices,
+			}
+			c.JSON(http.StatusOK, APIResponse{
+				Success: true,
+				Data: gin.H{
+					"kind":          next.Kind,
+					"level_step_id": next.LevelStepID,
+					"question":      questionInfo,
+				},
+			})
+			return
+		default:
+			c.JSON(http.StatusOK, APIResponse{
+				Success: true,
+				Data: gin.H{
+					"kind":    core.LessonStepKindNone,
+					"message": "Unknown step",
+				},
 			})
 		}
+	}
+}
 
-		questionInfo := QuestionInfo{
-			ID:          question.ID,
-			Prompt:      question.Prompt,
-			MultiSelect: question.MultiSelect,
-			Choices:     choices,
+// AcknowledgeTextStepHandler - отметить просмотр текстовой карточки
+func AcknowledgeTextStepHandler(attemptService core.AttemptService) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		userID, err := GetUserIDFromContext(c)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, APIResponse{
+				Success: false,
+				Error: &APIError{
+					Code:    ErrCodeInternal,
+					Message: "Failed to get user ID",
+				},
+			})
+			return
+		}
+
+		idStr := c.Param("id")
+		attemptID, err := strconv.ParseUint(idStr, 10, 32)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, APIResponse{
+				Success: false,
+				Error: &APIError{
+					Code:    ErrCodeValidation,
+					Message: "Invalid attempt ID",
+				},
+			})
+			return
+		}
+
+		var req TextStepAckRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, APIResponse{
+				Success: false,
+				Error: &APIError{
+					Code:    ErrCodeValidation,
+					Message: "Invalid request data",
+					Details: err.Error(),
+				},
+			})
+			return
+		}
+
+		if err := attemptService.AcknowledgeTextStep(c.Request.Context(), uint(attemptID), userID, req.LevelStepID); err != nil {
+			status := http.StatusBadRequest
+			msg := err.Error()
+			if msg == "forbidden" {
+				status = http.StatusForbidden
+			}
+			c.JSON(status, APIResponse{
+				Success: false,
+				Error: &APIError{
+					Code:    ErrCodeValidation,
+					Message: msg,
+				},
+			})
+			return
 		}
 
 		c.JSON(http.StatusOK, APIResponse{
 			Success: true,
-			Data:    questionInfo,
+			Data:    gin.H{"ok": true},
 		})
 	}
 }

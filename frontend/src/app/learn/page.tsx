@@ -2,14 +2,13 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Progress } from '@/components/ui/progress';
-import { Badge } from '@/components/ui/badge';
+import { GlareCard } from '@/components/ui/glare-card';
 import { useLevels, useUserStats, useDiamondsBalance } from '@/shared/hooks/useAPI';
 import type { Level, Stats, RewardBalance } from '@/types/api';
 import { Sidebar } from '@/components/Sidebar';
 import { MenuButton } from '@/components/MenuButton';
+import { cn } from '@/lib/utils';
 
-// Простая конфетти-анимация на canvas без зависимостей
 function ConfettiCanvas({ active }: { active: boolean }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   useEffect(() => {
@@ -27,17 +26,25 @@ function ConfettiCanvas({ active }: { active: boolean }) {
     };
     resize();
     let raf = 0;
-    let particles: Array<{x:number;y:number;vx:number;vy:number;size:number;color:string;life:number}> = [];
-    const colors = ['#00e3c1','#1CB0F6','#FF9600','#FFD166','#6C63FF','#EF476F'];
+    let particles: Array<{
+      x: number;
+      y: number;
+      vx: number;
+      vy: number;
+      size: number;
+      color: string;
+      life: number;
+    }> = [];
+    const colors = ['#fafafa', '#e5e5e5', '#d4d4d4', '#a3a3a3', '#737373', '#525252'];
     const spawn = (n: number) => {
       for (let i = 0; i < n; i++) {
         particles.push({
-          x: (canvas.clientWidth) * Math.random(),
+          x: canvas.clientWidth * Math.random(),
           y: -10,
           vx: (Math.random() - 0.5) * 2,
           vy: Math.random() * 2 + 2,
           size: Math.random() * 6 + 4,
-          color: colors[Math.floor(Math.random()*colors.length)],
+          color: colors[Math.floor(Math.random() * colors.length)],
           life: 120 + Math.random() * 60,
         });
       }
@@ -46,21 +53,37 @@ function ConfettiCanvas({ active }: { active: boolean }) {
     const loop = () => {
       raf = requestAnimationFrame(loop);
       frame++;
-      const w = canvas.clientWidth; const h = canvas.clientHeight;
+      const w = canvas.clientWidth;
+      const h = canvas.clientHeight;
       ctx.clearRect(0, 0, w, h);
       if (active && frame < 90) spawn(8);
-      particles.forEach(p => { p.x += p.vx; p.y += p.vy; p.vy += 0.03; p.life -= 1; });
-      particles = particles.filter(p => p.life > 0 && p.y < h + 20);
-      particles.forEach(p => { ctx.save(); ctx.fillStyle = p.color; ctx.translate(p.x, p.y); ctx.rotate((p.x + p.y) * 0.02); ctx.fillRect(-p.size/2, -p.size/2, p.size, p.size); ctx.restore(); });
+      particles.forEach((p) => {
+        p.x += p.vx;
+        p.y += p.vy;
+        p.vy += 0.03;
+        p.life -= 1;
+      });
+      particles = particles.filter((p) => p.life > 0 && p.y < h + 20);
+      particles.forEach((p) => {
+        ctx.save();
+        ctx.fillStyle = p.color;
+        ctx.translate(p.x, p.y);
+        ctx.rotate((p.x + p.y) * 0.02);
+        ctx.fillRect(-p.size / 2, -p.size / 2, p.size, p.size);
+        ctx.restore();
+      });
     };
     const onResize = () => resize();
     window.addEventListener('resize', onResize);
     loop();
-    return () => { cancelAnimationFrame(raf); window.removeEventListener('resize', onResize); };
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener('resize', onResize);
+    };
   }, [active]);
   return (
     <div className="pointer-events-none absolute inset-0 overflow-hidden">
-      <canvas ref={canvasRef} className="w-full h-full" />
+      <canvas ref={canvasRef} className="h-full w-full" />
     </div>
   );
 }
@@ -78,44 +101,44 @@ function LessonCompleteOverlay({
   reward: number;
   onClose: () => void;
 }) {
-  const accuracy = Math.round((score / Math.max(1, total)) * 100);
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
-      <div className="absolute inset-0 bg-white/70 backdrop-blur-md" />
+      <div className="absolute inset-0 bg-black/70 backdrop-blur-md" />
       <ConfettiCanvas active={true} />
-      <div className="relative z-10 w-full max-w-lg mx-auto animate-in fade-in-50 zoom-in-95">
-        <div className={`rounded-3xl p-8 shadow-2xl ${
-          perfect ? 'bg-gradient-to-b from-[#00e3c1]/10 to-blue-50 border-2 border-[#00e3c1]/30' : 'bg-gradient-to-b from-orange-50 to-yellow-50 border-2 border-orange-200'
-        }`}>
-          <div className="text-center mb-4">
-            <div className="text-5xl mb-2">{perfect ? '🎉' : '✅'}</div>
-            <h3 className={`text-2xl font-extrabold ${perfect ? 'text-[#00b89a]' : 'text-orange-700'}`}>
-            {perfect ? 'Урок завершен!' : 'Урок завершен!'}
+      <div className="relative z-10 mx-auto w-full max-w-lg animate-in fade-in-50 zoom-in-95 px-4">
+        <div
+          className={`rounded-3xl p-8 shadow-2xl ${
+            perfect
+              ? 'border-2 border-zinc-600 bg-gradient-to-b from-zinc-900 to-zinc-950'
+              : 'border-2 border-zinc-700 bg-gradient-to-b from-zinc-900 to-zinc-950'
+          }`}
+        >
+          <div className="mb-4 text-center">
+            <div className="mb-2 text-5xl">{perfect ? '🎉' : '✅'}</div>
+            <h3 className={`text-2xl font-extrabold ${perfect ? 'text-white' : 'text-zinc-200'}`}>
+              Урок завершен!
             </h3>
           </div>
 
-          <div className="grid grid-cols-2 gap-4 mb-6">
-            <div className="p-4 bg-white rounded-xl text-center shadow">
-              <div className="text-2xl font-bold text-yellow-600">💎</div>
-              <div className="text-sm text-gray-600">+{reward}</div>
+          <div className="mb-6 grid grid-cols-2 gap-4">
+            <div className="rounded-xl border border-zinc-700 bg-zinc-800 p-4 text-center">
+              <div className="text-2xl font-bold text-zinc-200">💎</div>
+              <div className="text-sm text-zinc-400">+{reward}</div>
             </div>
-            <div className="p-4 bg-white rounded-xl text-center shadow">
-              <div className="text-2xl font-bold text-green-600">{Math.min(100, Math.round(score))}%</div>
-              <div className="text-sm text-gray-600">точность</div>
+            <div className="rounded-xl border border-zinc-700 bg-zinc-800 p-4 text-center">
+              <div className="text-2xl font-bold text-white">{Math.min(100, Math.round(score))}%</div>
+              <div className="text-sm text-zinc-400">точность</div>
             </div>
           </div>
 
           {!perfect && (
-            <div className="mb-6 p-3 bg-orange-100 rounded-xl text-center text-sm text-orange-700">
+            <div className="mb-6 rounded-xl border border-zinc-600 bg-zinc-800 p-3 text-center text-sm text-zinc-300">
               💡 Все неправильные ответы были исправлены!
             </div>
           )}
 
           <div className="text-center">
-            <button
-              onClick={onClose}
-              className="duofinance-button duofinance-button-primary px-10 py-3 text-sm"
-            >
+            <button onClick={onClose} className="finstart-button finstart-button-primary px-10 py-3 text-sm">
               Continue
             </button>
           </div>
@@ -125,187 +148,214 @@ function LessonCompleteOverlay({
   );
 }
 
-function StepNode({
-  state,
-  label,
+function LessonExpandOverlay({
+  level,
+  lessonIndex,
+  onClose,
+  onStartLesson,
 }: {
-  state: 'active' | 'completed' | 'locked';
-  label: string;
+  level: Level;
+  lessonIndex: number;
+  onClose: () => void;
+  onStartLesson: () => void;
 }) {
-  if (state === 'completed') {
-    return (
-      <div
-        className="relative group animate-in fade-in-50 zoom-in-95 duration-300"
-        aria-label={`Level ${label} completed`}
-      >
-        <div className="absolute inset-0 rounded-full blur-md opacity-40 bg-yellow-400 group-hover:opacity-60 transition-opacity" />
-        <div className="w-16 h-16 rounded-full bg-gradient-to-br from-yellow-400 to-amber-500 flex items-center justify-center text-white shadow-xl ring-4 ring-white">
-          <span className="text-2xl">⭐</span>
-        </div>
-      </div>
-    );
-  }
-  if (state === 'locked') {
-    return (
-      <div
-        className="relative animate-in fade-in-50 zoom-in-95 duration-300"
-        aria-label={`Level ${label} locked`}
-      >
-        <div className="w-16 h-16 rounded-full bg-gradient-to-br from-gray-300 to-gray-200 flex items-center justify-center text-gray-500 shadow ring-4 ring-white">
-          <span className="text-2xl">🔒</span>
-        </div>
-      </div>
-    );
-  }
   return (
-    <div
-      className="relative group focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 rounded-full animate-in fade-in-50 zoom-in-95 duration-300"
-      role="button"
-      tabIndex={0}
-      aria-label={`Level ${label}`}
-    >
-      <div className="absolute inset-0 rounded-full bg-[#00e3c1]/40 blur opacity-0 group-hover:opacity-100 transition-opacity" />
-      <div className="w-16 h-16 rounded-full bg-gradient-to-br from-[#00e3c1] to-[#00b89a] flex items-center justify-center text-white shadow-xl ring-4 ring-white">
-        <span className="text-2xl font-bold drop-shadow-sm">{label}</span>
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6">
+      <div
+        className="absolute inset-0 bg-black/80 backdrop-blur-md transition-opacity"
+        aria-hidden
+        onClick={onClose}
+      />
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="lesson-expand-title"
+        className="relative z-10 max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-3xl border border-zinc-700 bg-zinc-900 p-6 shadow-2xl animate-in fade-in zoom-in-95 duration-200 sm:p-8"
+      >
+        <p className="text-xs font-medium uppercase tracking-wider text-zinc-500">Урок {lessonIndex}</p>
+        <h2 id="lesson-expand-title" className="mt-2 text-2xl font-bold leading-tight text-white sm:text-3xl">
+          {level.title}
+        </h2>
+        <p className="mt-3 text-sm leading-relaxed text-zinc-400">
+          {level.description || `Раздел: ${level.topic}. Интерактивные задания и проверка усвоения материала.`}
+        </p>
+
+        <ul className="mt-6 space-y-2.5 border-t border-zinc-800 pt-6 text-sm text-zinc-400">
+          <li>
+            <span className="text-zinc-500">Тема:</span>{' '}
+            <span className="text-zinc-200">{level.topic}</span>
+          </li>
+          <li>
+            <span className="text-zinc-500">Награда:</span>{' '}
+            <span className="text-zinc-200">{level.reward_points} 💎</span>
+          </li>
+          {typeof level.steps_count === 'number' && level.steps_count > 0 && (
+            <li>
+              <span className="text-zinc-500">Заданий в уроке:</span>{' '}
+              <span className="text-zinc-200">{level.steps_count}</span>
+            </li>
+          )}
+          <li className="text-zinc-500">Подсказки и мгновенная обратная связь по ходу урока.</li>
+        </ul>
+
+        <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:items-center">
+          <button
+            type="button"
+            className="finstart-button finstart-button-primary inline-flex min-h-[48px] flex-1 items-center justify-center rounded-full px-6 py-3 text-sm font-semibold !rounded-full transition active:scale-[0.98] sm:flex-none"
+            onClick={onStartLesson}
+          >
+            {level.isCompleted ? 'Пройти заново' : 'Пройти'}
+          </button>
+          <button
+            type="button"
+            className="rounded-full px-4 py-3 text-sm font-medium text-zinc-400 underline-offset-4 transition hover:text-white hover:underline"
+            onClick={onClose}
+          >
+            Закрыть
+          </button>
+        </div>
       </div>
     </div>
   );
 }
 
 export default function LearnPage() {
-  const { user, loading } = useAuth();
-  const navigate = useNavigate();
-  const location = useLocation();
-  const { levels, loading: levelsLoading } = useLevels();
-  const { stats: userStats, loading: statsLoading } = useUserStats();
-  const { balance: diamondsBalance, loading: balanceLoading } = useDiamondsBalance();
+  const { user, loading } = useAuth();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const { levels, loading: levelsLoading } = useLevels();
+  const { stats: userStats, loading: statsLoading } = useUserStats();
+  const { balance: diamondsBalance, loading: balanceLoading } = useDiamondsBalance();
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  
-  // Обработка состояния завершения урока
-  const [showCompletionMessage, setShowCompletionMessage] = useState(false);
-  const [completionData, setCompletionData] = useState<any>(null);
-  
-  // Преобразуем данные бэкенда в формат фронтенда
+
+  const [showCompletionMessage, setShowCompletionMessage] = useState(false);
+  const [completionData, setCompletionData] = useState<Record<string, unknown> | null>(null);
+  const [expandedLevelId, setExpandedLevelId] = useState<number | null>(null);
+
   const stats: Stats = {
     currentStreak: userStats?.current_streak || 0,
     longestStreak: userStats?.current_streak || 0,
     completedLevels: userStats?.completed_levels || 0,
   };
-  
-  const balance: RewardBalance = {
-    diamonds: diamondsBalance || 0,
-    gems: 0,
-    coins: 0,
-  };
 
-  useEffect(() => {
-    if (!loading && !user) {
-      navigate('/login');
-    }
-  }, [user, loading, navigate]);
+  const balance: RewardBalance = {
+    diamonds: diamondsBalance || 0,
+    gems: 0,
+    coins: 0,
+  };
 
-  // (dark theme removed)
+  useEffect(() => {
+    if (!loading && !user) {
+      navigate('/login');
+    }
+  }, [user, loading, navigate]);
 
-  // Обработка завершения урока
-  useEffect(() => {
-    if (location.state?.lessonCompleted) {
-      setCompletionData(location.state);
-      setShowCompletionMessage(true);
-      // очищаем state в history, но оставляем экран до нажатия Continue
+  useEffect(() => {
+    const state = location.state as { lessonCompleted?: boolean } | null;
+    if (state?.lessonCompleted) {
+      setCompletionData(state as Record<string, unknown>);
+      setShowCompletionMessage(true);
       navigate('/learn', { replace: true, state: {} });
-    }
-  }, [location.state, navigate]);
+    }
+  }, [location.state, navigate]);
+
+  useEffect(() => {
+    if (expandedLevelId === null) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setExpandedLevelId(null);
+    };
+    window.addEventListener('keydown', onKey);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      document.body.style.overflow = prev;
+    };
+  }, [expandedLevelId]);
+
+  useEffect(() => {
+    if (expandedLevelId === null) return;
+    if (!levels.some((l) => l.id === expandedLevelId)) {
+      setExpandedLevelId(null);
+    }
+  }, [expandedLevelId, levels]);
 
   if (loading || !user || levelsLoading || statsLoading || balanceLoading) {
     return (
-      <div className="min-h-screen bg-gradient-to-b from-white to-gray-50">
-        <div className="container mx-auto px-4 py-8 max-w-4xl">
-          <div className="animate-in fade-in-50 slide-in-from-top-2 duration-300 mb-6 grid grid-cols-3 gap-4">
-            <div className="p-3 bg-white rounded-xl shadow">
-              <div className="h-6 w-16 rounded bg-gray-200 animate-pulse" />
-            </div>
-            <div className="p-3 bg-white rounded-xl shadow">
-              <div className="h-6 w-16 rounded bg-gray-200 animate-pulse" />
-            </div>
-            <div className="p-3 bg-white rounded-xl shadow">
-              <div className="h-6 w-16 rounded bg-gray-200 animate-pulse" />
-            </div>
-          </div>
-          <div className="space-y-8">
-            {Array.from({ length: 4 }).map((_, i) => (
-              <div key={i} className="flex items-center gap-8">
-                <div className="flex-1">
-                  <div className="inline-block w-full max-w-md">
-                    <div className="bg-white p-6 rounded-3xl shadow-lg animate-pulse">
-                      <div className="h-4 w-24 bg-gray-200 rounded mb-3" />
-                      <div className="h-6 w-56 bg-gray-200 rounded mb-2" />
-                      <div className="h-4 w-64 bg-gray-200 rounded mb-4" />
-                      <div className="h-8 w-24 bg-gray-200 rounded" />
-                    </div>
-                  </div>
+      <div className="flex min-h-screen bg-neutral-950 text-zinc-100">
+        <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+        <div className="flex min-h-screen flex-1 flex-col lg:ml-64">
+          <div className="flex-1 px-4 py-8">
+            <div className="mb-8 grid animate-in fade-in-50 slide-in-from-top-2 duration-300 grid-cols-3 gap-4">
+              {[0, 1, 2].map((i) => (
+                <div key={i} className="rounded-xl border border-zinc-800 bg-zinc-900 p-3">
+                  <div className="h-6 w-16 animate-pulse rounded bg-zinc-700" />
                 </div>
-                <div className="w-16 h-16 rounded-full bg-gray-200 shadow ring-4 ring-white" />
-                <div className="flex-1"></div>
-              </div>
-            ))}
+              ))}
+            </div>
+            <div className="grid w-full grid-cols-[repeat(auto-fill,minmax(min(100%,16rem),1fr))] gap-6 pb-4 sm:gap-8 md:gap-10">
+              {Array.from({ length: 8 }).map((_, i) => (
+                <div
+                  key={i}
+                  className="aspect-[17/21] w-full min-w-0 animate-pulse rounded-[48px] border border-zinc-800 bg-zinc-900"
+                />
+              ))}
+            </div>
           </div>
         </div>
       </div>
     );
   }
 
-  const getLevelIcon = (level: Level, index: number) => {
-    if (level.isCompleted) return <StepNode state="completed" label={`${index + 1}`} />;
-    if (level.isLocked) return <StepNode state="locked" label={`${index + 1}`} />;
-    return <StepNode state="active" label={`${index + 1}`} />;
-  };
+  const expandedLevel =
+    expandedLevelId !== null ? levels.find((l) => l.id === expandedLevelId) : undefined;
 
-  return (
-    <div className="min-h-screen bg-gradient-to-b from-white to-gray-50 flex">
-      {/* Sidebar */}
-      <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
-      
-      {/* Main Content */}
+  return (
+    <div className="flex min-h-screen bg-neutral-950 text-zinc-100">
+      <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+
       <div className="flex-1 lg:ml-64">
-        <header className="bg-white border-b-2 border-gray-200 sticky top-0 z-30">
-          <div className="container mx-auto px-4 py-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-4">
-                <MenuButton onClick={() => setSidebarOpen(!sidebarOpen)} isOpen={sidebarOpen} />
-              </div>
+        <header className="sticky top-0 z-30 border-b border-zinc-800 bg-zinc-950">
+          <div className="container mx-auto px-4 py-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <MenuButton onClick={() => setSidebarOpen(!sidebarOpen)} isOpen={sidebarOpen} />
+              </div>
 
               <div className="flex items-center gap-4">
-                <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-gray-100 hover:bg-gray-200 transition-colors">
-                  <div className="w-6 h-6 rounded-full bg-gradient-to-br from-orange-400 to-red-500 flex items-center justify-center text-white text-sm shadow">
+                <div className="flex items-center gap-2 rounded-full border border-zinc-700 bg-zinc-800 px-3 py-1 transition-colors hover:bg-zinc-700">
+                  <div className="flex h-6 w-6 items-center justify-center rounded-full bg-gradient-to-br from-neutral-500 to-neutral-700 text-sm text-white shadow">
                     🔥
                   </div>
-                  <span className="font-bold text-gray-800">{stats.currentStreak}</span>
+                  <span className="font-bold text-zinc-100">{stats.currentStreak}</span>
                 </div>
-                <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-gray-100 hover:bg-gray-200 transition-colors">
-                  <div className="w-6 h-6 rounded-full bg-gradient-to-br from-blue-400 to-indigo-600 flex items-center justify-center text-white text-sm shadow">
+                <div className="flex items-center gap-2 rounded-full border border-zinc-700 bg-zinc-800 px-3 py-1 transition-colors hover:bg-zinc-700">
+                  <div className="flex h-6 w-6 items-center justify-center rounded-full bg-gradient-to-br from-neutral-400 to-neutral-600 text-sm text-white shadow">
                     💎
                   </div>
-                  <span className="font-bold text-gray-800">{balance.diamonds}</span>
+                  <span className="font-bold text-zinc-100">{balance.diamonds}</span>
                 </div>
-                
-                <Link to="/profile" className="flex items-center gap-2 hover:opacity-80 transition-opacity duration-200 hover:scale-110">
-                  <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#1CB0F6] to-[#1899D6] flex items-center justify-center text-white font-bold hover:shadow-lg transition-all duration-200">
-                    {user.username.charAt(0).toUpperCase()}
-                  </div>
-                </Link>
-              </div>
-            </div>
-          </div>
-        </header>
 
-        <div className="container mx-auto px-4 py-8 max-w-4xl">
-          {/* Экран завершения урока */}
+                <Link
+                  to="/profile"
+                  className="flex items-center gap-2 transition-opacity duration-200 hover:scale-110 hover:opacity-80"
+                >
+                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-neutral-700 to-neutral-900 font-bold text-white transition-all duration-200 hover:shadow-lg">
+                    {user.username.charAt(0).toUpperCase()}
+                  </div>
+                </Link>
+              </div>
+            </div>
+          </div>
+        </header>
+
+        <div className="px-4 py-8 lg:px-8">
           {showCompletionMessage && completionData && (
             <LessonCompleteOverlay
               perfect={!!completionData.perfectScore}
-              score={completionData.score}
-              total={completionData.totalQuestions}
-              reward={completionData.reward}
+              score={Number(completionData.score)}
+              total={Number(completionData.totalQuestions)}
+              reward={Number(completionData.reward)}
               onClose={() => {
                 setShowCompletionMessage(false);
                 setCompletionData(null);
@@ -313,75 +363,96 @@ export default function LearnPage() {
             />
           )}
 
-        <div className="space-y-6">
-          <h2 className="text-3xl font-bold text-gray-800 text-center">Your Learning Path</h2>
+          {expandedLevel && !expandedLevel.isLocked && (
+            <LessonExpandOverlay
+              level={expandedLevel}
+              lessonIndex={levels.findIndex((l) => l.id === expandedLevel.id) + 1}
+              onClose={() => setExpandedLevelId(null)}
+              onStartLesson={() => {
+                setSidebarOpen(false);
+                setExpandedLevelId(null);
+                navigate(`/lesson/${expandedLevel.id}`);
+              }}
+            />
+          )}
 
-          <div className="relative">
-            <div className="absolute left-1/2 -translate-x-1/2 w-[3px] h-full bg-gradient-to-b from-gray-200 via-gray-100 to-transparent rounded-full"></div>
+          <div
+            className={cn(
+              'transition-[opacity,filter] [scrollbar-gutter:stable]',
+              expandedLevelId !== null && 'pointer-events-none opacity-40 blur-[1px]'
+            )}
+          >
+            <div className="mb-6">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                <h1 className="text-2xl font-bold text-white sm:text-3xl">Уроки</h1>
+                <Link
+                  to="/courses"
+                  className="text-sm font-medium text-zinc-500 transition hover:text-zinc-200"
+                >
+                  ← К курсам
+                </Link>
+              </div>
+              <p className="mt-2 max-w-2xl text-sm text-zinc-500">
+                Проходите уроки по порядку — следующий откроется после успешного прохождения.
+              </p>
+            </div>
 
-            <div className="space-y-8 relative">
-              {levels.map((level, index) => {
-                const isEven = index % 2 === 0;
-                return (
-                  <div
-                    key={level.id}
-                    className={`flex items-center gap-8 ${
-                      isEven ? 'flex-row' : 'flex-row-reverse'
-                    }`}
-                  >
-                    <div className={`flex-1 ${isEven ? 'text-right' : 'text-left'}`}>
-                      <div className="inline-block">
-                            <div className="bg-white p-6 rounded-3xl shadow-lg hover:shadow-xl hover:scale-105 transition-all duration-300 cursor-pointer animate-in fade-in-50 slide-in-from-bottom-2">
-                          <div className="flex items-center gap-3 mb-3">
-                            <Badge
-                              className={`${
-                        level.difficulty === 'beginner'
-                          ? 'bg-[#00e3c1]/20 text-[#00b89a]'
-                                  : level.difficulty === 'intermediate'
-                                    ? 'bg-yellow-100 text-yellow-700'
-                                    : 'bg-red-100 text-red-700'
-                              }`}
-                            >
-                              {level.difficulty}
-                            </Badge>
-                            <span className="text-sm text-gray-500">{level.reward_points} 💎</span>
-                          </div>
+            <div className="w-full pb-4">
+              <div className="grid w-full grid-cols-[repeat(auto-fill,minmax(min(100%,16rem),1fr))] items-stretch gap-6 py-4 sm:gap-8 md:gap-10">
+              {levels.map((level: Level, index: number) => {
+                const locked = !!level.isLocked;
+                const card = (
+                  <GlareCard
+                    disabled={locked}
+                    frameClassName={locked ? 'border-zinc-900' : 'border-zinc-600/55'}
+                    className={cn(
+                      'flex h-full min-h-0 flex-col px-5 py-6 text-center',
+                      locked ? 'bg-zinc-950' : 'bg-zinc-800'
+                    )}
+                  >
+                    <span className="text-xs font-medium uppercase tracking-wider text-zinc-500">
+                      Урок {index + 1}
+                    </span>
+                    <div className="mt-3 flex min-h-0 flex-1 flex-col items-center gap-2">
+                      <span className="text-xs text-zinc-400">{level.reward_points} 💎</span>
+                      <h2 className="line-clamp-2 text-lg font-bold leading-snug text-white">{level.title}</h2>
+                      <p className="line-clamp-3 text-xs leading-relaxed text-zinc-400">
+                        {level.description || `Категория: ${level.topic}`}
+                      </p>
+                      {level.isCompleted && (
+                        <span className="text-xs font-medium text-emerald-400/90">Пройдено</span>
+                      )}
+                    </div>
+                    {!locked && (
+                      <p className="mt-6 text-[11px] font-medium uppercase tracking-wide text-zinc-500">
+                        Нажмите, чтобы открыть
+                      </p>
+                    )}
+                  </GlareCard>
+                );
 
-                          <h3 className="text-xl font-bold text-gray-800 mb-2">{level.title}</h3>
-                          <p className="text-gray-600 text-sm mb-4">{level.description || `Learn ${level.topic}`}</p>
-
-                          {level.isCompleted && (
-                            <div className="space-y-2">
-                              <Progress value={100} className="h-2" />
-                              <p className="text-xs text-gray-500">Complete</p>
-                            </div>
-                          )}
-
-                          {!level.isLocked && (
-                            <Link
-                              to={`/lesson/${level.id}`}
-                              className="mt-4 inline-block duofinance-button duofinance-button-primary px-6 py-2 text-xs"
-                            >
-                              {level.isCompleted ? 'Practice Again' : 'Start'}
-                            </Link>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="relative z-10">
-                      {getLevelIcon(level, index)}
-                    </div>
-
-                    <div className="flex-1"></div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
+                return (
+                  <div key={level.id} className="flex min-w-0 w-full flex-col">
+                    {locked ? (
+                      <div className="w-full rounded-[52px]">{card}</div>
+                    ) : (
+                      <button
+                        type="button"
+                        className="w-full rounded-[52px] border-0 bg-transparent p-0 text-left outline-none transition-transform hover:scale-[1.02] active:scale-[0.99] focus-visible:ring-2 focus-visible:ring-white/40 focus-visible:ring-offset-2 focus-visible:ring-offset-neutral-950"
+                        aria-label={`Открыть урок ${index + 1}: ${level.title}`}
+                        onClick={() => setExpandedLevelId(level.id)}
+                      >
+                        {card}
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 }

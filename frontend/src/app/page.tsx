@@ -1,6 +1,7 @@
 import { useAuth } from '@/contexts/AuthContext';
 import { useNavigate, Link } from 'react-router-dom';
 import { useEffect } from 'react';
+import { BackgroundLines } from '@/components/ui/background-lines';
 
 export default function Home() {
   const { user, loading } = useAuth();
@@ -8,149 +9,177 @@ export default function Home() {
 
   useEffect(() => {
     if (!loading && user) {
-      navigate('/learn');
+      navigate('/courses');
     }
   }, [user, loading, navigate]);
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
+      <div className="min-h-screen flex items-center justify-center bg-neutral-950 text-white">
         <div className="text-2xl">Loading...</div>
       </div>
     );
   }
 
   return (
-    <main className="min-h-screen bg-gradient-to-b from-white via-blue-50/30 to-gray-50">
-      <header className="container mx-auto px-4 py-6 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <img 
-            src="/logo-removebg-preview.png" 
-            alt="DuoFinance" 
-            className="w-10 h-10"
-          />
-          <span className="text-2xl font-bold text-gray-800">duofinance</span>
-        </div>
-        <div className="flex items-center gap-4">
-          <Link
-            to="/login"
-            className="px-4 py-2 text-[#1CB0F6] font-bold hover:text-[#1899D6]"
-          >
-            I ALREADY HAVE AN ACCOUNT
-          </Link>
-          <Link
-            to="/register"
-            className="duofinance-button duofinance-button-primary px-8 py-3 text-sm"
-          >
-            Get Started
-          </Link>
-        </div>
-      </header>
-
-      <section className="container mx-auto px-4 py-20 text-center">
-        <div className="max-w-5xl mx-auto">
-          <div className="mb-10 animate-in fade-in-50 slide-in-from-top-2">
-            <div className="relative w-72 h-72 mx-auto rounded-3xl shadow-2xl bg-gradient-to-br from-[#00e3c1] to-[#00b89a]">
-              <svg viewBox="0 0 200 200" className="absolute inset-0 w-full h-full" aria-hidden="true">
-                <defs>
-                  <filter id="softShadow" x="-50%" y="-50%" width="200%" height="200%">
-                    <feDropShadow dx="0" dy="6" stdDeviation="8" floodColor="#1a1a1a" floodOpacity="0.25" />
-                  </filter>
-                </defs>
-                <circle cx="100" cy="100" r="68" fill="#fff" fillOpacity="0.15" filter="url(#softShadow)" />
-                <circle cx="70" cy="90" r="10" fill="#fff" />
-                <circle cx="130" cy="90" r="10" fill="#fff" />
-                <path d="M70 125 C95 145 105 145 130 125" stroke="#fff" strokeWidth="6" strokeLinecap="round" fill="none" />
-              </svg>
-            </div>
+    <main className="min-h-screen bg-neutral-950 text-white antialiased">
+      <BackgroundLines
+        className="flex min-h-[max(48rem,78vh)] w-full flex-col bg-black/[0.96] md:min-h-[max(52rem,82vh)]"
+        svgOptions={{ duration: 12 }}
+      >
+        <header className="w-full shrink-0 border-b border-white/10">
+          <div className="mx-auto flex max-w-7xl items-center justify-center px-5 py-4 sm:px-8">
+            <Link
+              to="/"
+              className="text-[1.35rem] font-extrabold lowercase tracking-tight text-white sm:text-[1.55rem]"
+            >
+              финстарт
+            </Link>
           </div>
+        </header>
 
-          <h1 className="text-5xl font-extrabold text-gray-800 mb-6 leading-tight">
-            The free, fun, and effective way to<br />learn a language!
+        <section className="mx-auto flex w-full max-w-7xl flex-1 flex-col items-center justify-center px-4 py-12 text-center md:px-6 md:pb-36 md:pt-10">
+          <h1 className="relative z-20 max-w-4xl bg-gradient-to-b from-neutral-50 to-neutral-400 bg-clip-text text-[2rem] font-bold leading-tight text-transparent sm:text-5xl lg:text-6xl lg:leading-[1.1]">
+            Бесплатно, понятно и по делу — так можно освоить финансы онлайн!
           </h1>
-
-          <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-12 animate-in fade-in-50 slide-in-from-bottom-2">
+          <div className="relative z-20 mt-10 flex w-full max-w-lg flex-col flex-wrap items-center justify-center gap-3 sm:flex-row">
             <Link
               to="/register"
-              className="duofinance-button duofinance-button-primary px-12 py-4 text-base w-full sm:w-auto"
+              className="inline-flex h-10 min-w-[12rem] w-full items-center justify-center rounded-full border border-zinc-300 bg-white px-6 text-xs font-semibold text-neutral-950 transition hover:bg-zinc-200 sm:w-auto"
             >
-              Get Started
+              Начать обучение
             </Link>
             <Link
               to="/login"
-              className="duofinance-button duofinance-button-secondary px-12 py-4 text-base w-full sm:w-auto"
+              className="inline-flex h-10 min-w-[12rem] w-full items-center justify-center rounded-full border border-white px-6 text-xs font-medium text-white transition-colors hover:bg-white/10 sm:w-auto"
             >
-              I Already Have an Account
+              У меня уже есть аккаунт
             </Link>
           </div>
-        </div>
-      </section>
+        </section>
+      </BackgroundLines>
 
-      <section className="bg-[#F7F7F7] py-20">
-        <div className="container mx-auto px-4">
-          <h2 className="text-4xl font-bold text-center mb-16">
-            <span className="text-[#00e3c1]">free.</span>{' '}
-            <span className="text-[#1CB0F6]">fun.</span>{' '}
-            <span className="text-[#FF9600]">effective.</span>
-          </h2>
-
-          <div className="grid md:grid-cols-3 gap-12 max-w-6xl mx-auto">
-            <div className="text-center">
-              <div className="w-32 h-32 mx-auto mb-6 bg-white rounded-2xl shadow-lg flex items-center justify-center text-6xl">
-                📱
-              </div>
-              <h3 className="text-2xl font-bold mb-4 text-gray-800">
-                backed by science
-              </h3>
-              <p className="text-gray-600">
-                We use research-backed teaching methods and delightful content to create courses that effectively teach skills!
-              </p>
+      <section id="features" className="max-w-6xl mx-auto px-6 pt-4 text-center">
+        <div className="grid md:grid-cols-3 gap-10">
+          <div className="flex flex-col items-center">
+            <div className="h-44 w-full max-w-sm rounded-2xl bg-zinc-900 border border-zinc-800 flex items-center justify-center">
+              <div className="w-16 h-16 bg-zinc-700 rounded-lg" aria-hidden="true" />
             </div>
+            <h3 className="mt-6 font-semibold text-white">Курсы онлайн.</h3>
+            <p className="mt-2 text-xs leading-relaxed text-white max-w-[260px] mx-auto">
+              Учитесь в удобном формате в любое время. Курсы подходят для новичков.
+            </p>
+          </div>
 
-            <div className="text-center">
-              <div className="w-32 h-32 mx-auto mb-6 bg-white rounded-2xl shadow-lg flex items-center justify-center text-6xl">
-                🎮
-              </div>
-              <h3 className="text-2xl font-bold mb-4 text-gray-800">
-                stay motivated
-              </h3>
-              <p className="text-gray-600">
-                We make it easy to form a habit with game-like features, fun challenges, and reminders from Duo the owl.
-              </p>
+          <div className="flex flex-col items-center">
+            <div className="h-44 w-full max-w-sm rounded-2xl bg-zinc-900 border border-zinc-800 flex items-center justify-center">
+              <div className="w-16 h-16 bg-zinc-700 rounded-full" aria-hidden="true" />
             </div>
+            <h3 className="mt-6 font-semibold text-white">Простая подача.</h3>
+            <p className="mt-2 text-xs leading-relaxed text-white max-w-[260px] mx-auto">
+              Интерактивные задания и короткие объяснения в игровом формате.
+            </p>
+          </div>
 
-            <div className="text-center">
-              <div className="w-32 h-32 mx-auto mb-6 bg-white rounded-2xl shadow-lg flex items-center justify-center text-6xl">
-                ✨
-              </div>
-              <h3 className="text-2xl font-bold mb-4 text-gray-800">
-                personalized learning
-              </h3>
-              <p className="text-gray-600">
-                Combining the best of AI and language science, lessons are tailored to help you learn at just the right level.
-              </p>
+          <div className="flex flex-col items-center">
+            <div className="h-44 w-full max-w-sm rounded-2xl bg-zinc-900 border border-zinc-800 flex items-center justify-center">
+              <div
+                className="w-0 h-0 border-l-[34px] border-l-transparent border-r-[34px] border-r-transparent border-b-[58px] border-b-zinc-600"
+                aria-hidden="true"
+              />
             </div>
+            <h3 className="mt-6 font-semibold text-white">Чёткие результаты.</h3>
+            <p className="mt-2 text-xs leading-relaxed text-white max-w-[260px] mx-auto">
+              Отслеживайте свой прогресс по уровням и темам.
+            </p>
           </div>
         </div>
       </section>
 
-      <section className="py-20">
-        <div className="container mx-auto px-4 text-center">
-          <h2 className="text-4xl font-bold mb-8 text-gray-800">
-            <span className="text-[#00e3c1]">learn a language</span> with duofinance
-          </h2>
+      <section className="max-w-6xl mx-auto px-6 pt-28 pb-20 text-center">
+        <h2 className="text-lg font-semibold text-white">Готовы начать?</h2>
+        <p className="mt-2 text-xs text-white leading-relaxed">
+          Зарегистрируйтесь
+          <br />
+          бесплатно и откройте свой
+          <br />
+          первый курс.
+        </p>
+        <div className="mt-4">
           <Link
             to="/register"
-            className="duofinance-button duofinance-button-primary px-12 py-4 text-base inline-block"
+            className="h-8 px-4 rounded-full border border-white text-white text-xs font-medium inline-flex items-center justify-center hover:bg-white/10 transition-colors"
           >
-            Get Started
+            Начать обучение
           </Link>
         </div>
       </section>
 
-      <footer className="bg-[#00e3c1] py-8">
-        <div className="container mx-auto px-4 text-center text-white">
-          <p>Site language: English</p>
+      <footer className="border-t border-zinc-800">
+        <div className="max-w-6xl mx-auto px-6 py-14 flex items-end justify-between">
+          <div className="text-xs text-white">© 2026.</div>
+          <div className="grid grid-cols-3 gap-16 text-xs text-white">
+            <div>
+              <div className="font-semibold text-white mb-3">Платформа</div>
+              <ul className="space-y-2">
+                <li>
+                  <a href="#courses" className="text-white hover:underline transition-colors">
+                    Курсы
+                  </a>
+                </li>
+                <li>
+                  <a href="#features" className="text-white hover:underline transition-colors">
+                    Уровни
+                  </a>
+                </li>
+                <li>
+                  <a href="#features" className="text-white hover:underline transition-colors">
+                    Отзывы
+                  </a>
+                </li>
+              </ul>
+            </div>
+            <div>
+              <div className="font-semibold text-white mb-3">Ресурсы</div>
+              <ul className="space-y-2">
+                <li>
+                  <a href="#features" className="text-white hover:underline transition-colors">
+                    FAQ
+                  </a>
+                </li>
+                <li>
+                  <a href="#features" className="text-white hover:underline transition-colors">
+                    Поддержка
+                  </a>
+                </li>
+                <li>
+                  <a href="#features" className="text-white hover:underline transition-colors">
+                    Контакты
+                  </a>
+                </li>
+              </ul>
+            </div>
+            <div>
+              <div className="font-semibold text-white mb-3">О компании</div>
+              <ul className="space-y-2">
+                <li>
+                  <a href="#features" className="text-white hover:underline transition-colors">
+                    Миссия
+                  </a>
+                </li>
+                <li>
+                  <a href="#features" className="text-white hover:underline transition-colors">
+                    Команда
+                  </a>
+                </li>
+                <li>
+                  <a href="#features" className="text-white hover:underline transition-colors">
+                    Партнёры
+                  </a>
+                </li>
+              </ul>
+            </div>
+          </div>
         </div>
       </footer>
     </main>

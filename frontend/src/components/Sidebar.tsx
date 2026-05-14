@@ -13,26 +13,29 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
 
   const menuItems = [
     {
-      name: 'Learn',
+      name: 'Уроки',
       path: '/learn',
       icon: '📚',
-      description: 'Continue learning'
+      description: 'Продолжить обучение',
     },
     {
-      name: 'Achievements',
+      name: 'Достижения',
       path: '/achievements',
       icon: '🏆',
-      description: 'Your achievements'
+      description: 'Ваши достижения'
     },
     {
-      name: 'Settings',
+      name: 'Настройки',
       path: '/settings',
       icon: '⚙️',
-      description: 'App settings'
+      description: 'Настройки сайта'
     }
   ];
 
   const isActive = (path: string) => {
+    if (path === '/learn') {
+      return location.pathname === '/learn' || location.pathname.startsWith('/lesson/');
+    }
     return location.pathname === path;
   };
 
@@ -48,20 +51,15 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
 
       {/* Sidebar */}
       <div className={`
-        fixed top-0 left-0 h-screen w-64 bg-white shadow-xl z-50 transform transition-transform duration-300 ease-in-out overflow-y-auto
+        fixed top-0 left-0 h-screen w-64 bg-zinc-950 shadow-xl z-50 transform transition-transform duration-300 ease-in-out overflow-y-auto
         ${isOpen ? 'translate-x-0' : '-translate-x-full'}
-        lg:translate-x-0 lg:border-r lg:border-gray-200
+        lg:translate-x-0 lg:border-r lg:border-zinc-800
       `}>
         {/* Header */}
-        <div className="p-6 border-b border-gray-200">
-          <Link to="/learn" className="flex items-center gap-3 hover:opacity-80 transition-opacity duration-200" onClick={onClose}>
-            <img 
-              src="/logo-removebg-preview.png" 
-              alt="DuoFinance" 
-              className="w-10 h-10 hover:scale-105 transition-transform duration-200"
-            />
+        <div className="p-6 border-b border-zinc-800">
+          <Link to="/learn" className="flex items-center justify-center gap-3 hover:opacity-80 transition-opacity duration-200" onClick={onClose}>
             <div>
-              <h1 className="text-xl font-bold text-gray-800">duofinance</h1>
+              <h1 className="text-xl font-bold text-zinc-100">финстарт</h1>
             </div>
           </Link>
         </div>
@@ -75,22 +73,22 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
                   to={item.path}
                   onClick={onClose}
                   className={`
-                    flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-300 group hover:scale-105 hover:shadow-lg
+                    flex items-center gap-3 px-4 py-3 rounded-xl transition-colors duration-200 group hover:scale-105
                     ${isActive(item.path) 
-                      ? 'bg-[#00e3c1] text-white shadow-md hover:bg-[#00d4b3]' 
-                      : 'text-gray-700 hover:bg-gray-100 hover:text-gray-900 hover:shadow-md'
+                      ? 'bg-white text-neutral-950 hover:bg-zinc-200'
+                      : 'text-zinc-300 hover:bg-zinc-800 hover:text-white'
                     }
                   `}
                 >
                   <span className="text-xl">{item.icon}</span>
                   <div className="flex-1">
                     <p className="font-medium">{item.name}</p>
-                    <p className={`text-xs ${isActive(item.path) ? 'text-white/80' : 'text-gray-500'}`}>
+                    <p className={`text-xs ${isActive(item.path) ? 'text-neutral-600' : 'text-zinc-500'}`}>
                       {item.description}
                     </p>
                   </div>
                   {isActive(item.path) && (
-                    <div className="w-2 h-2 bg-white rounded-full"></div>
+                    <div className="w-2 h-2 bg-neutral-950 rounded-full"></div>
                   )}
                 </Link>
               </li>

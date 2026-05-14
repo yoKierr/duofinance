@@ -43,7 +43,6 @@
 ### Уровни (защищенные)
 - `GET /v1/levels` - список всех уровней
 - `GET /v1/levels/:id` - детали уровня
-- `GET /v1/levels/difficulty/:difficulty` - по сложности
 - `GET /v1/levels/topic/:topic` - по теме
 
 ### Попытки прохождения (защищенные)

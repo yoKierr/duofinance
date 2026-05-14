@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { apiClient } from '@/shared/api/client';
@@ -16,18 +16,30 @@ interface Question {
   }[];
 }
 
+interface TextCard {
+  level_step_id: number;
+  title: string;
+  body: string;
+}
+
 interface AnswerResponse {
   correct: boolean;
   explanation: string;
 }
 
+type NextPayload =
+  | { kind: 'none'; message?: string }
+  | { kind: 'text'; level_step_id: number; title: string; body: string }
+  | { kind: 'question'; question: Question };
+
 export default function LessonPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { user, loading } = useAuth();
-  const [level, setLevel] = useState<any>(null);
-  const [attempt, setAttempt] = useState<any>(null);
+  const [level, setLevel] = useState<Record<string, unknown> | null>(null);
+  const attemptRef = useRef<{ id: number } | null>(null);
   const [currentQuestion, setCurrentQuestion] = useState<Question | null>(null);
+  const [textCard, setTextCard] = useState<TextCard | null>(null);
   const [selectedChoices, setSelectedChoices] = useState<number[]>([]);
   const [questionResult, setQuestionResult] = useState<AnswerResponse | null>(null);
   const [loadingState, setLoadingState] = useState(true);
@@ -36,11 +48,15 @@ export default function LessonPage() {
   const [totalQuestions, setTotalQuestions] = useState(0);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(1);
   const [isAnswering, setIsAnswering] = useState(false);
-  // Track which questions were answered incorrectly and need retry
   const [questionsToRetry, setQuestionsToRetry] = useState<Map<number, Question>>(new Map());
-  const [correctlyAnsweredQuestions, setCorrectlyAnsweredQuestions] = useState<Set<number>>(new Set());
+  const retryRef = useRef(questionsToRetry);
+  const answeredCorrectRef = useRef<Set<number>>(new Set());
   const isMountedRef = useRef(true);
   const pendingTimeoutRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    retryRef.current = questionsToRetry;
+  }, [questionsToRetry]);
 
   useEffect(() => {
     return () => {
@@ -60,6 +76,106 @@ export default function LessonPage() {
     setIsAnswering(false);
   };
 
+  const completeLesson = useCallback(async () => {
+    const att = attemptRef.current;
+    if (!att) return;
+    try {
+      const result = await apiClient.completeAttempt(att.id);
+      setQuestionsToRetry((currentRetryQueue) => {
+        const finalQueue = Array.from(currentRetryQueue.values());
+        const noRetriesLeft = finalQueue.length === 0;
+        navigate('/learn', {
+          state: {
+            lessonCompleted: true,
+            score: result.score ?? 0,
+            correctAnswers: result.correct_answers ?? result.correctAnswers ?? 0,
+            totalQuestions: result.total_questions ?? result.totalQuestions ?? totalQuestions,
+            reward: (result.reward?.diamonds ?? result.Reward?.diamonds) || (level?.reward_points as number) || 0,
+            perfectScore: noRetriesLeft,
+          },
+        });
+        return currentRetryQueue;
+      });
+    } catch (err) {
+      console.error('Error completing lesson:', err);
+      navigate('/learn', {
+        state: {
+          lessonCompleted: true,
+          score: 0,
+          correctAnswers: 0,
+          totalQuestions,
+          reward: (level?.reward_points as number) || 0,
+          perfectScore: true,
+        },
+      });
+    }
+  }, [navigate, totalQuestions, level]);
+
+  const proceedToNext = useCallback(
+    async (attemptId: number, retryQueue: Map<number, Question>) => {
+      try {
+        const raw = await apiClient.getNextQuestion(attemptId);
+        const next = raw as NextPayload;
+        if (!isMountedRef.current) return;
+
+        if (next && next.kind === 'question' && next.question) {
+          setCurrentQuestion(next.question);
+          setTextCard(null);
+          setSelectedChoices([]);
+          setQuestionResult(null);
+          setIsAnswering(false);
+          setCurrentQuestionIndex((p) => p + 1);
+          return;
+        }
+
+        if (next && next.kind === 'text') {
+          setCurrentQuestion(null);
+          setTextCard({
+            level_step_id: next.level_step_id,
+            title: next.title,
+            body: next.body,
+          });
+          setQuestionResult(null);
+          setIsAnswering(false);
+          return;
+        }
+
+        const finalRetryList = Array.from(retryQueue.values());
+        if (finalRetryList.length > 0) {
+          const firstRetryQuestion = finalRetryList[0];
+          retryQueue.delete(firstRetryQuestion.id);
+          setQuestionsToRetry(new Map(retryQueue));
+          setCurrentQuestion(firstRetryQuestion);
+          setTextCard(null);
+          setSelectedChoices([]);
+          setQuestionResult(null);
+          setIsAnswering(false);
+          return;
+        }
+
+        await completeLesson();
+      } catch (e) {
+        console.error('Error advancing lesson:', e);
+        const finalRetryList = Array.from(retryQueue.values());
+        if (finalRetryList.length > 0) {
+          const firstRetryQuestion = finalRetryList[0];
+          retryQueue.delete(firstRetryQuestion.id);
+          setQuestionsToRetry(new Map(retryQueue));
+          if (isMountedRef.current) {
+            setCurrentQuestion(firstRetryQuestion);
+            setTextCard(null);
+            setSelectedChoices([]);
+            setQuestionResult(null);
+            setIsAnswering(false);
+          }
+        } else if (isMountedRef.current) {
+          await completeLesson();
+        }
+      }
+    },
+    [completeLesson]
+  );
+
   useEffect(() => {
     if (!loading && !user) {
       navigate('/login');
@@ -67,7 +183,7 @@ export default function LessonPage() {
     }
 
     if (user && id) {
-      startLesson();
+      void startLesson();
     }
   }, [user, loading, id, navigate]);
 
@@ -75,40 +191,63 @@ export default function LessonPage() {
     try {
       setLoadingState(true);
       setError(null);
-
-      // Сбрасываем состояние попытки при старте нового урока/повторе
       setScore(0);
       setQuestionsToRetry(new Map());
-      setCorrectlyAnsweredQuestions(new Set());
+      answeredCorrectRef.current = new Set();
       setCurrentQuestionIndex(1);
       setSelectedChoices([]);
       setQuestionResult(null);
+      setTextCard(null);
+      setCurrentQuestion(null);
 
-      // Получаем информацию об уровне
-      const levelData = await apiClient.getLevel(parseInt(id!));
-      console.log('Level data:', levelData);
+      const levelData = await apiClient.getLevel(parseInt(id!, 10));
       setLevel(levelData);
 
-      // Начинаем попытку
-      const attemptData = await apiClient.startAttempt(parseInt(id!));
-      console.log('Attempt data:', attemptData);
-      setAttempt(attemptData);
+      const qCount =
+        (levelData.steps as Array<{ type?: string }> | undefined)?.filter((s) => s.type === 'question').length ?? 0;
+      setTotalQuestions(qCount);
 
-      // Получаем первый вопрос
-      const question = await apiClient.getNextQuestion(attemptData.id);
-      console.log('First question response:', question);
-      
-      if (question && question.question) {
-        setCurrentQuestion(question.question);
-        // Подсчитываем количество вопросов в уровне
-        const questionCount = levelData.steps?.filter((step: any) => step.type === 'question').length || 1;
-        setTotalQuestions(questionCount);
-        console.log('Total questions in level:', questionCount);
-      } else if (question && question.message) {
-        setError(`Нет вопросов для этого уровня: ${question.message}`);
-      } else {
-        setError('Нет вопросов для этого уровня');
+      const attemptData = await apiClient.startAttempt(parseInt(id!, 10));
+      attemptRef.current = attemptData;
+
+      const next = (await apiClient.getNextQuestion(attemptData.id)) as NextPayload;
+
+      if (next.kind === 'none') {
+        if (qCount === 0) {
+          await apiClient.completeAttempt(attemptData.id);
+          navigate('/learn', {
+            state: {
+              lessonCompleted: true,
+              score: 100,
+              correctAnswers: 0,
+              totalQuestions: 0,
+              reward: (levelData.reward_points as number) || 0,
+              perfectScore: true,
+            },
+          });
+          return;
+        }
+        setError('Нет шагов для этого урока');
+        return;
       }
+
+      if (next.kind === 'text') {
+        setTextCard({
+          level_step_id: next.level_step_id,
+          title: next.title,
+          body: next.body,
+        });
+        setCurrentQuestion(null);
+        return;
+      }
+
+      if (next.kind === 'question' && next.question) {
+        setCurrentQuestion(next.question);
+        setTextCard(null);
+        return;
+      }
+
+      setError('Не удалось загрузить урок');
     } catch (err) {
       console.error('Error starting lesson:', err);
       setError(err instanceof Error ? err.message : 'Ошибка загрузки урока');
@@ -117,114 +256,68 @@ export default function LessonPage() {
     }
   };
 
+  const handleTextContinue = async () => {
+    const att = attemptRef.current;
+    const card = textCard;
+    if (!att || !card) return;
+    try {
+      setIsAnswering(true);
+      await apiClient.acknowledgeTextStep(att.id, card.level_step_id);
+      await proceedToNext(att.id, new Map(retryRef.current));
+    } catch (err) {
+      console.error(err);
+      setError(err instanceof Error ? err.message : 'Ошибка');
+    } finally {
+      setIsAnswering(false);
+    }
+  };
+
   const handleAnswer = async () => {
-    if (!attempt || !currentQuestion || selectedChoices.length === 0 || isAnswering) {
+    if (!attemptRef.current || !currentQuestion || selectedChoices.length === 0 || isAnswering) {
       return;
     }
 
     setIsAnswering(true);
     try {
       const result = await apiClient.answerQuestion(
-        attempt.id,
+        attemptRef.current.id,
         currentQuestion.id,
         selectedChoices
       );
 
       setQuestionResult(result);
-      
+
       const currentQuestionId = currentQuestion.id;
-      
+
       if (result.correct) {
-        // Правильный ответ - удаляем из очереди, если был там
-        setQuestionsToRetry(prev => {
+        setQuestionsToRetry((prev) => {
           const newMap = new Map(prev);
           newMap.delete(currentQuestionId);
           return newMap;
         });
-        // Обновляем множество правильно отвеченных вопросов и счет
-        setCorrectlyAnsweredQuestions(prev => {
-          const alreadyCounted = prev.has(currentQuestionId);
-          if (!alreadyCounted) {
-            setScore(s => s + 1);
-          }
-          const newSet = new Set(prev);
-          newSet.add(currentQuestionId);
-          return newSet;
-        });
+        if (!answeredCorrectRef.current.has(currentQuestionId)) {
+          answeredCorrectRef.current.add(currentQuestionId);
+          setScore((s) => s + 1);
+        }
       } else {
-        // Неправильный ответ - добавляем в очередь для повторного прохождения
-        setQuestionsToRetry(prev => {
+        setQuestionsToRetry((prev) => {
           const newMap = new Map(prev);
           newMap.set(currentQuestionId, currentQuestion);
           return newMap;
         });
       }
 
-      // Через 3 секунды переходим к следующему вопросу или завершаем урок
       if (pendingTimeoutRef.current) {
         clearTimeout(pendingTimeoutRef.current);
       }
       pendingTimeoutRef.current = window.setTimeout(() => {
-        // Сначала пробуем взять следующий новый вопрос с бэкенда,
-        // а только затем — из очереди на повтор
-        setQuestionsToRetry(currentRetryQueue => {
+        setQuestionsToRetry((currentRetryQueue) => {
           if (!isMountedRef.current) {
             return currentRetryQueue;
           }
-          apiClient.getNextQuestion(attempt.id)
-            .then(nextQuestion => {
-              console.log('Next question response:', nextQuestion);
-              
-              if (nextQuestion && nextQuestion.question) {
-                // Есть следующий новый вопрос — показываем его
-                if (!isMountedRef.current) return;
-                setCurrentQuestion(nextQuestion.question);
-                setSelectedChoices([]);
-                setQuestionResult(null);
-                setIsAnswering(false);
-                setCurrentQuestionIndex(prev => prev + 1);
-                return;
-              }
-
-              // Новых вопросов нет — берем из очереди на повтор
-              const finalRetryList = Array.from(currentRetryQueue.values());
-              if (finalRetryList.length > 0) {
-                console.log('Using queued wrong question, left:', finalRetryList.length);
-                const firstRetryQuestion = finalRetryList[0];
-                currentRetryQueue.delete(firstRetryQuestion.id);
-
-                if (isMountedRef.current) {
-                  setCurrentQuestion(firstRetryQuestion);
-                  setSelectedChoices([]);
-                  setQuestionResult(null);
-                  setIsAnswering(false);
-                }
-              } else {
-                // Совсем нет вопросов — завершаем урок
-                console.log('All questions completed');
-                if (isMountedRef.current) completeLesson();
-              }
-            })
-            .catch(err => {
-              console.error('Error getting next question:', err);
-              // На ошибке тоже пробуем очередь на повтор
-              const finalRetryList = Array.from(currentRetryQueue.values());
-              if (finalRetryList.length > 0) {
-                const firstRetryQuestion = finalRetryList[0];
-                currentRetryQueue.delete(firstRetryQuestion.id);
-
-                if (isMountedRef.current) {
-                  setCurrentQuestion(firstRetryQuestion);
-                  setSelectedChoices([]);
-                  setQuestionResult(null);
-                  setIsAnswering(false);
-                }
-              } else {
-                if (isMountedRef.current) completeLesson();
-              }
-            });
-
-          // Возвращаем текущее состояние очереди (могли удалить первый элемент выше)
+          const aid = attemptRef.current?.id;
+          if (!aid) return currentRetryQueue;
+          void proceedToNext(aid, new Map(currentRetryQueue));
           return currentRetryQueue;
         });
       }, 3000);
@@ -235,53 +328,10 @@ export default function LessonPage() {
     }
   };
 
-  const completeLesson = async () => {
-    try {
-      const result = await apiClient.completeAttempt(attempt.id);
-      console.log('Lesson completed:', result);
-      
-      // Получаем финальное состояние очереди
-      setQuestionsToRetry(currentRetryQueue => {
-        const finalQueue = Array.from(currentRetryQueue.values());
-        const noRetriesLeft = finalQueue.length === 0;
-        
-        // Перенаправляем на страницу результатов или обратно к уровням
-        navigate('/learn', { 
-          state: { 
-            lessonCompleted: true, 
-            // из бэкенда: точность и правильные ответы
-            score: result.score ?? 0,
-            correctAnswers: result.correct_answers ?? result.correctAnswers ?? 0,
-            totalQuestions: result.total_questions ?? result.totalQuestions ?? totalQuestions,
-            reward: (result.reward?.diamonds ?? result.Reward?.diamonds) || level?.reward_points || 0,
-            perfectScore: noRetriesLeft
-          }
-        });
-        
-        return currentRetryQueue;
-      });
-    } catch (err) {
-      console.error('Error completing lesson:', err);
-      // Даже если ошибка при завершении, перенаправляем на главную
-      navigate('/learn', { 
-        state: { 
-          lessonCompleted: true, 
-          score: 0,
-          correctAnswers: 0,
-          totalQuestions: totalQuestions,
-          reward: level?.reward_points || 0,
-          perfectScore: true
-        }
-      });
-    }
-  };
-
   const toggleChoice = (choiceId: number) => {
     if (currentQuestion?.multi_select) {
-      setSelectedChoices(prev => 
-        prev.includes(choiceId) 
-          ? prev.filter(id => id !== choiceId)
-          : [...prev, choiceId]
+      setSelectedChoices((prev) =>
+        prev.includes(choiceId) ? prev.filter((x) => x !== choiceId) : [...prev, choiceId]
       );
     } else {
       setSelectedChoices([choiceId]);
@@ -290,7 +340,7 @@ export default function LessonPage() {
 
   if (loading || loadingState) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
+      <div className="flex min-h-screen items-center justify-center bg-neutral-950 text-zinc-100">
         <div className="text-2xl">Загрузка урока...</div>
       </div>
     );
@@ -298,31 +348,28 @@ export default function LessonPage() {
 
   if (error) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
+      <div className="flex min-h-screen items-center justify-center bg-neutral-950 px-4 text-zinc-100">
         <div className="text-center">
-          <h1 className="text-2xl font-bold text-red-600 mb-4">Ошибка</h1>
-          <p className="text-gray-600 mb-4">{error}</p>
-          <Button onClick={() => navigate('/learn')}>
-            Вернуться к уровням
-          </Button>
+          <h1 className="mb-4 text-2xl font-bold text-red-400">Ошибка</h1>
+          <p className="mb-4 text-zinc-400">{error}</p>
+          <Button onClick={() => navigate('/learn')}>Вернуться к уровням</Button>
         </div>
       </div>
     );
   }
 
-  if (!currentQuestion) {
+  if (!currentQuestion && !textCard) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-2xl">Нет вопросов для этого уровня</div>
+      <div className="flex min-h-screen items-center justify-center bg-neutral-950 text-zinc-100">
+        <div className="text-2xl">Нет содержимого для этого урока</div>
       </div>
     );
   }
 
   const retryCount = questionsToRetry.size;
-
   return (
-    <div className="min-h-screen bg-gradient-to-b from-white to-gray-50">
-      <header className="bg-white border-b-2 border-gray-200 sticky top-0 z-50">
+    <div className="min-h-screen bg-neutral-950 text-zinc-100">
+      <header className="sticky top-0 z-50 border-b border-zinc-800 bg-zinc-950">
         <div className="container mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
@@ -331,98 +378,109 @@ export default function LessonPage() {
                 onClick={async () => {
                   cancelPendingTransition();
                   try {
-                    if (attempt?.id) {
-                      await apiClient.cancelAttempt(attempt.id)
+                    if (attemptRef.current?.id) {
+                      await apiClient.cancelAttempt(attemptRef.current.id);
                     }
-                  } catch (e) {
-                    // игнорируем ошибки отмены
+                  } catch {
+                    /* ignore */
                   }
-                  navigate('/learn')
+                  navigate('/learn');
                 }}
-                className="text-gray-600 hover:text-gray-800 text-2xl leading-none"
+                className="text-2xl leading-none text-zinc-400 hover:text-white"
               >
                 ×
               </button>
-              <h1 className="text-xl font-bold text-gray-800">
-                {level?.title || 'Урок'}
-              </h1>
+              <h1 className="text-xl font-bold text-white">{String(level?.title || 'Урок')}</h1>
             </div>
-            <div className="flex items-center gap-4">
-              <Badge className="bg-blue-100 text-blue-700">
-                Вопрос {currentQuestionIndex} из {totalQuestions}
-              </Badge>
-              <Badge className="bg-[#00e3c1]/20 text-[#00b89a]">
-                Правильно: {score}
-              </Badge>
-              {retryCount > 0 && (
-                <Badge className="bg-orange-100 text-orange-700">
-                  Исправление: {retryCount}
+            <div className="flex flex-wrap items-center gap-2 sm:gap-4">
+              {textCard && (
+                <Badge className="border border-zinc-700 bg-zinc-800 text-zinc-200">Инфо</Badge>
+              )}
+              {currentQuestion && totalQuestions > 0 && (
+                <Badge className="border border-zinc-700 bg-zinc-800 text-zinc-200">
+                  Вопрос {currentQuestionIndex} из {totalQuestions}
                 </Badge>
+              )}
+              {totalQuestions > 0 && (
+                <Badge className="border border-zinc-600 bg-zinc-700 text-white">Правильно: {score}</Badge>
+              )}
+              {retryCount > 0 && (
+                <Badge className="border border-zinc-600 bg-zinc-800 text-zinc-300">Исправление: {retryCount}</Badge>
               )}
             </div>
           </div>
         </div>
       </header>
 
-      <div className="container mx-auto px-4 py-8 max-w-2xl">
-        <Card className="p-8 mb-6">
-          <div className="mb-6">
-            <h2 className="text-2xl font-bold text-gray-800 mb-4">
-              {currentQuestion.prompt}
-            </h2>
+      <div className="container mx-auto max-w-2xl px-4 py-8">
+        {textCard && (
+          <Card className="mb-6 p-8">
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">Справка</p>
+            <h2 className="mb-4 text-2xl font-bold text-white">{textCard.title || 'Важно'}</h2>
+            <div className="mb-8 whitespace-pre-wrap text-base leading-relaxed text-zinc-300">{textCard.body}</div>
+            <Button
+              onClick={() => void handleTextContinue()}
+              disabled={isAnswering}
+              className="finstart-button finstart-button-primary w-full"
+            >
+              {isAnswering ? '...' : 'Понятно, дальше'}
+            </Button>
+          </Card>
+        )}
 
-            {questionResult && (
-              <div className={`p-4 rounded-lg mb-4 ${
-                questionResult.correct
-                  ? 'bg-[#00e3c1]/10 border-2 border-[#00b89a]'
-                  : 'bg-red-50 border-2 border-red-500'
-              }`}>
-                <div className="flex items-center gap-2 mb-2">
-                  <span className="text-2xl">
-                    {questionResult.correct ? '✅' : '❌'}
-                  </span>
-                  <span className={`font-bold ${
-                    questionResult.correct ? 'text-[#00b89a]' : 'text-red-700'
-                  }`}>
-                    {questionResult.correct ? 'Правильно!' : 'Неправильно'}
-                  </span>
-                </div>
-                {questionResult.explanation && (
-                  <p className="text-gray-700">{questionResult.explanation}</p>
-                )}
-              </div>
-            )}
+        {currentQuestion && (
+          <Card className="mb-6 p-8">
+            <div className="mb-6">
+              <h2 className="mb-4 text-2xl font-bold text-white">{currentQuestion.prompt}</h2>
 
-            <div className="space-y-3">
-              {currentQuestion.choices.map((choice) => (
-                <button
-                  key={choice.id}
-                  onClick={() => toggleChoice(choice.id)}
-                  disabled={!!questionResult}
-                  className={`w-full p-4 text-left rounded-xl border-2 transition-all ${
-                    selectedChoices.includes(choice.id)
-                      ? 'border-blue-500 bg-blue-50 text-blue-700'
-                      : 'border-gray-200 hover:border-gray-300'
-                  } ${
-                    questionResult ? 'opacity-75 cursor-not-allowed' : 'cursor-pointer'
+              {questionResult && (
+                <div
+                  className={`mb-4 rounded-lg p-4 ${
+                    questionResult.correct
+                      ? 'border-2 border-zinc-600 bg-zinc-800'
+                      : 'border-2 border-red-500 bg-red-950/40'
                   }`}
                 >
-                  {choice.text}
-                </button>
-              ))}
-            </div>
-          </div>
+                  <div className="mb-2 flex items-center gap-2">
+                    <span className="text-2xl">{questionResult.correct ? '✅' : '❌'}</span>
+                    <span className={`font-bold ${questionResult.correct ? 'text-white' : 'text-red-400'}`}>
+                      {questionResult.correct ? 'Правильно!' : 'Неправильно'}
+                    </span>
+                  </div>
+                  {questionResult.explanation && <p className="text-zinc-300">{questionResult.explanation}</p>}
+                </div>
+              )}
 
-          {!questionResult && (
-            <Button
-              onClick={handleAnswer}
-              disabled={selectedChoices.length === 0 || isAnswering}
-              className="w-full duofinance-button duofinance-button-primary"
-            >
-              {isAnswering ? 'Обработка...' : 'Ответить'}
-            </Button>
-          )}
-        </Card>
+              <div className="space-y-3">
+                {currentQuestion.choices.map((choice) => (
+                  <button
+                    key={choice.id}
+                    type="button"
+                    onClick={() => toggleChoice(choice.id)}
+                    disabled={!!questionResult}
+                    className={`w-full rounded-xl border-2 p-4 text-left transition-all ${
+                      selectedChoices.includes(choice.id)
+                        ? 'border-white bg-zinc-800 text-white'
+                        : 'border-zinc-700 bg-zinc-950/80 text-zinc-200 hover:border-zinc-500'
+                    } ${questionResult ? 'cursor-not-allowed opacity-75' : 'cursor-pointer'}`}
+                  >
+                    {choice.text}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {!questionResult && (
+              <Button
+                onClick={() => void handleAnswer()}
+                disabled={selectedChoices.length === 0 || isAnswering}
+                className="finstart-button finstart-button-primary w-full"
+              >
+                {isAnswering ? 'Обработка...' : 'Ответить'}
+              </Button>
+            )}
+          </Card>
+        )}
       </div>
     </div>
   );

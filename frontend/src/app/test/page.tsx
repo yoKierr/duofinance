@@ -33,9 +33,9 @@ export default function TestPage() {
   ];
 
   return (
-    <div className="min-h-screen bg-gray-50 p-8">
+    <div className="min-h-screen bg-neutral-950 text-zinc-100 p-8">
       <div className="max-w-4xl mx-auto">
-        <h1 className="text-3xl font-bold mb-8">API Test Page</h1>
+        <h1 className="text-3xl font-bold mb-8 text-white">API Test Page</h1>
         
         <div className="grid gap-4 mb-8">
           {testEndpoints.map((test) => (
@@ -52,12 +52,12 @@ export default function TestPage() {
 
         <div className="space-y-4">
           {Object.entries(results).map(([endpoint, result]: [string, any]) => (
-            <div key={endpoint} className="bg-white p-4 rounded-lg border">
-              <h3 className="font-bold text-lg mb-2">{endpoint}</h3>
+            <div key={endpoint} className="bg-zinc-900 p-4 rounded-lg border border-zinc-800">
+              <h3 className="font-bold text-lg mb-2 text-white">{endpoint}</h3>
               <div className={`p-3 rounded ${
-                result.success ? 'bg-[#00e3c1]/10 border border-[#00e3c1]/30' : 'bg-red-50 border border-red-200'
+                result.success ? 'bg-zinc-800 border border-zinc-600' : 'bg-red-950/40 border border-red-600'
               }`}>
-                <pre className="text-sm overflow-auto">
+                <pre className="text-sm overflow-auto text-zinc-300">
                   {JSON.stringify(result, null, 2)}
                 </pre>
               </div>

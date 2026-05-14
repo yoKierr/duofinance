@@ -1,5 +1,5 @@
 // API Client для подключения к бэкенду
-import type { Level, Achievement, UserStats, User } from '@/types/api'
+import type { Level, Achievement, UserStats, User, Course } from '@/types/api'
 
 const API_BASE_URL = 'http://localhost:8080/v1'
 
@@ -150,6 +150,11 @@ class APIClient {
     return response.data || []
   }
 
+  async getCourses(): Promise<Course[]> {
+    const response = await this.request<Course[]>('/courses')
+    return response.data || []
+  }
+
   async getLevel(id: number): Promise<any> {
     const response = await this.request(`/levels/${id}`)
     return response.data
@@ -195,37 +200,86 @@ class APIClient {
   async getNextQuestion(attemptId: number): Promise<any> {
     const response = await this.request(`/attempts/${attemptId}/next`)
     console.log('getNextQuestion raw response:', response)
-    
-    // Бэкенд может возвращать два варианта:
-    // 1) { data: QuestionInfo } — реальный вопрос
-    // 2) { data: { message: 'No more questions', question: null } }
-    const data = response.data as any
 
+    const data = response.data as Record<string, unknown> | null | undefined
     if (!data) {
-      console.log('No data in response')
-      return null
+      return { kind: 'none', message: 'empty' }
     }
 
-    // Вариант 2: сообщение без вопроса
+    if (data.kind === 'none') {
+      return { kind: 'none', message: (data.message as string) || 'done' }
+    }
+
+    if (data.kind === 'text') {
+      return {
+        kind: 'text',
+        level_step_id: data.level_step_id as number,
+        title: (data.title as string) || '',
+        body: (data.body as string) || '',
+      }
+    }
+
+    if (data.kind === 'question' && data.question) {
+      const q = data.question as Record<string, unknown>
+      return {
+        kind: 'question',
+        level_step_id: data.level_step_id as number | undefined,
+        question: {
+          id: q.id as number,
+          prompt: q.prompt as string,
+          multi_select: Boolean(q.multi_select ?? q.multiSelect),
+          choices: ((q.choices as Array<Record<string, unknown>>) || []).map((c) => ({
+            id: c.id as number,
+            text: c.text as string,
+          })),
+        },
+      }
+    }
+
     if (data.message && !data.question) {
-      console.log('No more questions message:', data.message)
-      return null
+      return { kind: 'none', message: String(data.message) }
     }
 
-    // Вариант 1: плоский объект вопроса
     if (data.id && data.prompt) {
-      console.log('Found question:', data)
-      return { question: data }
+      const q = data as Record<string, unknown>
+      return {
+        kind: 'question',
+        question: {
+          id: q.id as number,
+          prompt: q.prompt as string,
+          multi_select: Boolean(q.multi_select),
+          choices: ((q.choices as Array<Record<string, unknown>>) || []).map((c) => ({
+            id: c.id as number,
+            text: c.text as string,
+          })),
+        },
+      }
     }
 
-    // На всякий случай поддержим старую схему { question }
     if (data.question) {
-      console.log('Found question in nested structure:', data.question)
-      return data
+      const q = data.question as Record<string, unknown>
+      return {
+        kind: 'question',
+        question: {
+          id: q.id as number,
+          prompt: q.prompt as string,
+          multi_select: Boolean(q.multi_select ?? q.multiSelect),
+          choices: ((q.choices as Array<Record<string, unknown>>) || []).map((c) => ({
+            id: c.id as number,
+            text: c.text as string,
+          })),
+        },
+      }
     }
 
-    console.log('No question found in response')
-    return null
+    return { kind: 'none', message: 'unknown' }
+  }
+
+  async acknowledgeTextStep(attemptId: number, levelStepId: number): Promise<void> {
+    await this.request(`/attempts/${attemptId}/text-step`, {
+      method: 'POST',
+      body: JSON.stringify({ level_step_id: levelStepId }),
+    })
   }
 
   async answerQuestion(attemptId: number, questionId: number, choiceIds: number[]): Promise<any> {

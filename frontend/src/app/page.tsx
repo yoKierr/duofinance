@@ -9,7 +9,7 @@ export default function Home() {
 
   useEffect(() => {
     if (!loading && user) {
-      navigate('/courses');
+      navigate('/learn');
     }
   }, [user, loading, navigate]);
 

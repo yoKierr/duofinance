@@ -314,6 +314,18 @@ func (r *achievementRepo) GetAll(ctx context.Context) ([]*domain.Achievement, er
 	return achievements, nil
 }
 
+func (r *achievementRepo) GetShopItems(ctx context.Context) ([]*domain.Achievement, error) {
+	var achievements []*domain.Achievement
+	err := r.db.WithContext(ctx).
+		Where("shop_price > ?", 0).
+		Order("shop_price ASC, id ASC").
+		Find(&achievements).Error
+	if err != nil {
+		return nil, err
+	}
+	return achievements, nil
+}
+
 func (r *achievementRepo) GetByCode(ctx context.Context, code string) (*domain.Achievement, error) {
 	var achievement domain.Achievement
 	err := r.db.WithContext(ctx).Where("code = ?", code).First(&achievement).Error
@@ -321,6 +333,28 @@ func (r *achievementRepo) GetByCode(ctx context.Context, code string) (*domain.A
 		return nil, err
 	}
 	return &achievement, nil
+}
+
+func (r *achievementRepo) GetByID(ctx context.Context, id uint) (*domain.Achievement, error) {
+	var achievement domain.Achievement
+	err := r.db.WithContext(ctx).First(&achievement, id).Error
+	if err != nil {
+		return nil, err
+	}
+	return &achievement, nil
+}
+
+func (r *achievementRepo) ListAwardedAtByUser(ctx context.Context, userID uint) (map[uint]time.Time, error) {
+	var rows []domain.UserAchievement
+	err := r.db.WithContext(ctx).Where("user_id = ?", userID).Find(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[uint]time.Time, len(rows))
+	for _, row := range rows {
+		out[row.AchievementID] = row.AwardedAt
+	}
+	return out, nil
 }
 
 func (r *achievementRepo) GetByUserID(ctx context.Context, userID uint) ([]*domain.Achievement, error) {

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { apiClient } from '@/shared/api/client'
-import type { Level, Achievement, UserStats, Attempt, Course } from '@/types/api'
+import type { Level, Achievement, AchievementCatalogItem, ShopItem, UserStats, Attempt, Course } from '@/types/api'
 
 // Хук для получения уровней
 export function useLevels() {
@@ -103,7 +103,32 @@ export function useCourses() {
   return { courses, loading, error }
 }
 
-// Хук для получения достижений
+// Каталог достижений с прогрессом (синхронизация и выдача на бэкенде).
+export function useAchievementsCatalog() {
+  const [achievements, setAchievements] = useState<AchievementCatalogItem[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    const fetchCatalog = async () => {
+      try {
+        setLoading(true)
+        const data = await apiClient.getAchievementsCatalog()
+        setAchievements(data)
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Не удалось загрузить достижения')
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    fetchCatalog()
+  }, [])
+
+  return { achievements, loading, error }
+}
+
+// Хук для получения достижений (legacy)
 export function useAchievements() {
   const [achievements, setAchievements] = useState<Achievement[]>([])
   const [loading, setLoading] = useState(true)
@@ -115,16 +140,15 @@ export function useAchievements() {
         setLoading(true)
         const [allAchievements, userAchievements] = await Promise.all([
           apiClient.getAchievements(),
-          apiClient.getUserAchievements()
+          apiClient.getUserAchievements(),
         ])
-        
-        // Отмечаем разблокированные достижения
-        const userAchievementIds = new Set(userAchievements.map(a => a.id))
-        const formattedAchievements = allAchievements.map(achievement => ({
+
+        const userAchievementIds = new Set(userAchievements.map((a) => a.id))
+        const formattedAchievements = allAchievements.map((achievement) => ({
           ...achievement,
-          unlocked: userAchievementIds.has(achievement.id)
+          unlocked: userAchievementIds.has(achievement.id),
         }))
-        
+
         setAchievements(formattedAchievements)
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to fetch achievements')
@@ -170,23 +194,48 @@ export function useDiamondsBalance() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  useEffect(() => {
-    const fetchBalance = async () => {
-      try {
-        setLoading(true)
-        const data = await apiClient.getDiamondsBalance()
-        setBalance(data.balance)
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to fetch balance')
-      } finally {
-        setLoading(false)
-      }
+  const fetchBalance = async () => {
+    try {
+      setLoading(true)
+      const data = await apiClient.getDiamondsBalance()
+      setBalance(data.balance)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to fetch balance')
+    } finally {
+      setLoading(false)
     }
+  }
 
-    fetchBalance()
+  useEffect(() => {
+    void fetchBalance()
   }, [])
 
-  return { balance, loading, error }
+  return { balance, loading, error, refetch: fetchBalance, setBalance }
+}
+
+export function useShopItems() {
+  const [items, setItems] = useState<ShopItem[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  const fetchItems = async () => {
+    try {
+      setLoading(true)
+      setError(null)
+      const data = await apiClient.getShopItems()
+      setItems(data)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Не удалось загрузить магазин')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    void fetchItems()
+  }, [])
+
+  return { items, loading, error, refetch: fetchItems }
 }
 
 // Вспомогательная функция для получения иконки уровня

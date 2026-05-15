@@ -8,6 +8,7 @@ import CoursesPage from './app/courses/page'
 import LessonPage from './app/lesson/[id]/page'
 import TestPage from './app/test/page'
 import AchievementsPage from './app/achievements/page'
+import ShopPage from './app/shop/page'
 import SettingsPage from './app/settings/page'
 
 export default function App() {
@@ -23,6 +24,7 @@ export default function App() {
         <Route path="/lesson/:id" element={<LessonPage />} />
         <Route path="/test" element={<TestPage />} />
         <Route path="/achievements" element={<AchievementsPage />} />
+        <Route path="/shop" element={<ShopPage />} />
         <Route path="/settings" element={<SettingsPage />} />
       </Routes>
     </Router>

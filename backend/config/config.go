@@ -22,8 +22,9 @@ func Load() (*Config, error) {
 	godotenv.Load()
 
 	port, _ := strconv.Atoi(getEnv("PORT", "8080"))
-	jwtAccessTTLMin, _ := strconv.Atoi(getEnv("JWT_ACCESS_TTL_MIN", "15"))
-	jwtRefreshTTLDays, _ := strconv.Atoi(getEnv("JWT_REFRESH_TTL_DAYS", "7"))
+	// 0 = access-токен без срока действия (сессия до выхода)
+	jwtAccessTTLMin, _ := strconv.Atoi(getEnv("JWT_ACCESS_TTL_MIN", "0"))
+	jwtRefreshTTLDays, _ := strconv.Atoi(getEnv("JWT_REFRESH_TTL_DAYS", "3650"))
 
 	return &Config{
 		DatabaseURL:       getEnv("DATABASE_URL", ""),

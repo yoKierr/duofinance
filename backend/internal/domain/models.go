@@ -113,6 +113,7 @@ type Achievement struct {
 	Description string `gorm:"type:text"`
 	Icon        string `gorm:"size:255"`
 	Points      int    `gorm:"not null;default:0"`
+	ShopPrice   int    `gorm:"not null;default:0"` // цена в алмазах; >0 — только в магазине
 }
 
 // UserAchievement — связь многие-ко-многим пользователей и достижений с метаданными.

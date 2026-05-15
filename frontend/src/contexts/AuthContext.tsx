@@ -8,6 +8,8 @@ interface AuthContextType {
   login: (credentials: { email: string; password: string }) => Promise<void>
   register: (credentials: { email: string; username: string; password: string }) => Promise<void>
   logout: () => Promise<void>
+  refreshUser: () => Promise<void>
+  setUserFromApi: (user: User) => void
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
@@ -17,26 +19,38 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    // Проверяем, есть ли сохраненный токен
-    const token = localStorage.getItem('access_token')
-    if (token) {
-      // Пытаемся получить данные пользователя
-      apiClient.getCurrentUser()
-        .then((userData) => {
+    const restoreSession = async () => {
+      const token = localStorage.getItem('access_token')
+      const refresh = localStorage.getItem('refresh_token')
+      if (!token && !refresh) {
+        setLoading(false)
+        return
+      }
+
+      try {
+        const userData = await apiClient.getCurrentUser()
+        setUser(userData)
+      } catch {
+        if (!refresh) {
+          localStorage.removeItem('access_token')
+          setLoading(false)
+          return
+        }
+        try {
+          await apiClient.refreshToken()
+          const userData = await apiClient.getCurrentUser()
           setUser(userData)
-        })
-        .catch((error) => {
-          console.error('Failed to get current user:', error)
-          // Если токен недействителен, очищаем его
+        } catch (error) {
+          console.error('Failed to restore session:', error)
           localStorage.removeItem('access_token')
           localStorage.removeItem('refresh_token')
-        })
-        .finally(() => {
-          setLoading(false)
-        })
-    } else {
-      setLoading(false)
+        }
+      } finally {
+        setLoading(false)
+      }
     }
+
+    void restoreSession()
   }, [])
 
   const login = async ({ email, password }: { email: string; password: string }) => {
@@ -71,8 +85,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
+  const refreshUser = async () => {
+    const userData = await apiClient.getCurrentUser()
+    setUser(userData)
+  }
+
+  const setUserFromApi = (next: User) => {
+    setUser(next)
+  }
+
   return (
-    <AuthContext.Provider value={{ user, loading, login, register, logout }}>
+    <AuthContext.Provider value={{ user, loading, login, register, logout, refreshUser, setUserFromApi }}>
       {children}
     </AuthContext.Provider>
   )

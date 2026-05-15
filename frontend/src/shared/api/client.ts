@@ -1,5 +1,15 @@
 // API Client для подключения к бэкенду
-import type { Level, Achievement, UserStats, User, Course } from '@/types/api'
+import type {
+  Level,
+  Achievement,
+  AchievementCatalogItem,
+  ShopItem,
+  ShopPurchaseResult,
+  UserStats,
+  User,
+  Course,
+  UpdateProfilePayload,
+} from '@/types/api'
 
 const API_BASE_URL = 'http://localhost:8080/v1'
 
@@ -29,46 +39,83 @@ export interface AuthResponse {
 class APIClient {
   private baseURL: string
   private accessToken: string | null = null
+  private refreshPromise: Promise<void> | null = null
 
   constructor(baseURL: string = API_BASE_URL) {
     this.baseURL = baseURL
+    this.syncAccessTokenFromStorage()
+  }
+
+  private syncAccessTokenFromStorage() {
     this.accessToken = localStorage.getItem('access_token')
+  }
+
+  private isAuthEndpoint(endpoint: string) {
+    return (
+      endpoint.startsWith('/auth/login') ||
+      endpoint.startsWith('/auth/register') ||
+      endpoint.startsWith('/auth/refresh')
+    )
+  }
+
+  private async refreshAccessToken(): Promise<void> {
+    if (this.refreshPromise) {
+      await this.refreshPromise
+      return
+    }
+
+    this.refreshPromise = (async () => {
+      await this.refreshToken()
+    })().finally(() => {
+      this.refreshPromise = null
+    })
+
+    await this.refreshPromise
   }
 
   private async request<T>(
     endpoint: string,
-    options: RequestInit = {}
+    options: RequestInit = {},
+    retried = false
   ): Promise<APIResponse<T>> {
     const url = `${this.baseURL}${endpoint}`
-    
+    this.syncAccessTokenFromStorage()
+
     const headers: HeadersInit = {
       'Content-Type': 'application/json',
       ...options.headers,
     }
 
     if (this.accessToken) {
-      (headers as any).Authorization = `Bearer ${this.accessToken}`
+      (headers as Record<string, string>).Authorization = `Bearer ${this.accessToken}`
     }
 
     try {
-      console.log(`Making request to: ${url}`, { headers, body: options.body })
-      
       const response = await fetch(url, {
         ...options,
         headers,
       })
 
-      console.log(`Response status: ${response.status}`)
+      if (
+        response.status === 401 &&
+        !retried &&
+        !this.isAuthEndpoint(endpoint) &&
+        localStorage.getItem('refresh_token')
+      ) {
+        try {
+          await this.refreshAccessToken()
+          return this.request<T>(endpoint, options, true)
+        } catch {
+          // fall through to error handling below
+        }
+      }
 
       if (!response.ok) {
         const errorText = await response.text()
-        console.error('Response error:', errorText)
         throw new Error(`HTTP ${response.status}: ${errorText}`)
       }
 
-      const data = await response.json()
-      console.log('Response data:', data)
-      return data
+      return await response.json()
     } catch (error) {
       console.error('API request failed:', error)
       throw error
@@ -86,6 +133,9 @@ class APIClient {
       this.accessToken = response.data.access_token
       localStorage.setItem('access_token', response.data.access_token)
       localStorage.setItem('refresh_token', response.data.refresh_token)
+      if (response.data.user) {
+        response.data.user = this.mapUserFromApi(response.data.user)
+      }
     }
 
     return response.data!
@@ -118,24 +168,53 @@ class APIClient {
       throw new Error('No refresh token available')
     }
 
-    const response = await this.request<AuthResponse>('/auth/refresh', {
+    const url = `${this.baseURL}/auth/refresh`
+    const response = await fetch(url, {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ refresh_token: refreshToken }),
     })
 
-    if (response.success && response.data) {
-      this.accessToken = response.data.access_token
-      localStorage.setItem('access_token', response.data.access_token)
-      localStorage.setItem('refresh_token', response.data.refresh_token)
+    if (!response.ok) {
+      const errorText = await response.text()
+      throw new Error(`HTTP ${response.status}: ${errorText}`)
     }
 
-    return response.data!
+    const data: APIResponse<AuthResponse> = await response.json()
+
+    if (data.success && data.data) {
+      this.accessToken = data.data.access_token
+      localStorage.setItem('access_token', data.data.access_token)
+      localStorage.setItem('refresh_token', data.data.refresh_token)
+    } else {
+      throw new Error('Failed to refresh token')
+    }
+
+    return data.data!
   }
 
   // User methods
+  mapUserFromApi(data: User): User {
+    return {
+      id: data.id,
+      email: data.email,
+      username: data.username,
+      avatar: data.profile?.avatar || data.avatar,
+      profile: data.profile,
+    }
+  }
+
   async getCurrentUser(): Promise<User> {
     const response = await this.request<User>('/me')
-    return response.data!
+    return this.mapUserFromApi(response.data!)
+  }
+
+  async updateProfile(payload: UpdateProfilePayload): Promise<User> {
+    const response = await this.request<User>('/me/profile', {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    })
+    return this.mapUserFromApi(response.data!)
   }
 
   async getUserStats(): Promise<UserStats> {
@@ -169,6 +248,24 @@ class APIClient {
   async getUserAchievements(): Promise<Achievement[]> {
     const response = await this.request<Achievement[]>('/achievements/my')
     return response.data || []
+  }
+
+  async getAchievementsCatalog(): Promise<AchievementCatalogItem[]> {
+    const response = await this.request<AchievementCatalogItem[]>('/achievements/catalog')
+    return response.data || []
+  }
+
+  async getShopItems(): Promise<ShopItem[]> {
+    const response = await this.request<ShopItem[]>('/shop/items')
+    return response.data || []
+  }
+
+  async purchaseShopItem(achievementId: number): Promise<ShopPurchaseResult> {
+    const response = await this.request<ShopPurchaseResult>('/shop/purchase', {
+      method: 'POST',
+      body: JSON.stringify({ achievement_id: achievementId }),
+    })
+    return response.data!
   }
 
   // Rewards methods

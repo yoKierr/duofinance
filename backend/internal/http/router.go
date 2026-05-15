@@ -36,7 +36,7 @@ func SetupRoutes(r *gin.Engine, services *Services, db *gorm.DB) {
 
 			// Профиль пользователя
 			protected.GET("/me", MeHandler(services.Auth, services.User))
-			protected.PUT("/me/profile", UpdateProfileHandler(services.User))
+			protected.PUT("/me/profile", UpdateProfileHandler(services.Auth, services.User))
 			protected.GET("/me/stats", GetUserStatsHandler(services.User))
 
 			// Каталог курсов
@@ -74,8 +74,16 @@ func SetupRoutes(r *gin.Engine, services *Services, db *gorm.DB) {
 			achievements := protected.Group("/achievements")
 			{
 				achievements.GET("", GetAllAchievementsHandler(services.Achievement))
+				achievements.GET("/catalog", GetAchievementsCatalogHandler(services.Achievement))
 				achievements.GET("/my", GetUserAchievementsHandler(services.Achievement))
 				achievements.GET("/:id/progress", GetAchievementProgressHandler(services.Achievement))
+			}
+
+			// Магазин
+			shop := protected.Group("/shop")
+			{
+				shop.GET("/items", GetShopItemsHandler(services.Achievement))
+				shop.POST("/purchase", PurchaseShopItemHandler(services.Achievement))
 			}
 		}
 	}

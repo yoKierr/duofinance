@@ -46,12 +46,14 @@ func (j *JWTManager) GenerateTokens(userID uint, email, username string) (access
 		Email:    email,
 		Username: username,
 		RegisteredClaims: jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(time.Now().Add(j.accessTTL)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
 			NotBefore: jwt.NewNumericDate(time.Now()),
 			Issuer:    "duofinance",
 			Subject:   "access_token",
 		},
+	}
+	if j.accessTTL > 0 {
+		accessClaims.ExpiresAt = jwt.NewNumericDate(time.Now().Add(j.accessTTL))
 	}
 
 	accessTokenObj := jwt.NewWithClaims(jwt.SigningMethodHS256, accessClaims)
@@ -66,12 +68,14 @@ func (j *JWTManager) GenerateTokens(userID uint, email, username string) (access
 		Email:    email,
 		Username: username,
 		RegisteredClaims: jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(time.Now().Add(j.refreshTTL)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
 			NotBefore: jwt.NewNumericDate(time.Now()),
 			Issuer:    "duofinance",
 			Subject:   "refresh_token",
 		},
+	}
+	if j.refreshTTL > 0 {
+		refreshClaims.ExpiresAt = jwt.NewNumericDate(time.Now().Add(j.refreshTTL))
 	}
 
 	refreshTokenObj := jwt.NewWithClaims(jwt.SigningMethodHS256, refreshClaims)

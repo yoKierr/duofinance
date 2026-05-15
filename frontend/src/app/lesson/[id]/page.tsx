@@ -4,7 +4,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { apiClient } from '@/shared/api/client';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
+import { Progress } from '@/components/ui/progress';
 
 interface Question {
   id: number;
@@ -44,19 +44,12 @@ export default function LessonPage() {
   const [questionResult, setQuestionResult] = useState<AnswerResponse | null>(null);
   const [loadingState, setLoadingState] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [score, setScore] = useState(0);
   const [totalQuestions, setTotalQuestions] = useState(0);
-  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(1);
+  const [masteredQuestionIds, setMasteredQuestionIds] = useState<Set<number>>(new Set());
+  const [hadWrongAnswer, setHadWrongAnswer] = useState(false);
   const [isAnswering, setIsAnswering] = useState(false);
-  const [questionsToRetry, setQuestionsToRetry] = useState<Map<number, Question>>(new Map());
-  const retryRef = useRef(questionsToRetry);
-  const answeredCorrectRef = useRef<Set<number>>(new Set());
   const isMountedRef = useRef(true);
   const pendingTimeoutRef = useRef<number | null>(null);
-
-  useEffect(() => {
-    retryRef.current = questionsToRetry;
-  }, [questionsToRetry]);
 
   useEffect(() => {
     return () => {
@@ -67,6 +60,9 @@ export default function LessonPage() {
       }
     };
   }, []);
+
+  const progressPercent =
+    totalQuestions > 0 ? Math.round((masteredQuestionIds.size / totalQuestions) * 100) : 0;
 
   const cancelPendingTransition = () => {
     if (pendingTimeoutRef.current) {
@@ -81,20 +77,15 @@ export default function LessonPage() {
     if (!att) return;
     try {
       const result = await apiClient.completeAttempt(att.id);
-      setQuestionsToRetry((currentRetryQueue) => {
-        const finalQueue = Array.from(currentRetryQueue.values());
-        const noRetriesLeft = finalQueue.length === 0;
-        navigate('/learn', {
-          state: {
-            lessonCompleted: true,
-            score: result.score ?? 0,
-            correctAnswers: result.correct_answers ?? result.correctAnswers ?? 0,
-            totalQuestions: result.total_questions ?? result.totalQuestions ?? totalQuestions,
-            reward: (result.reward?.diamonds ?? result.Reward?.diamonds) || (level?.reward_points as number) || 0,
-            perfectScore: noRetriesLeft,
-          },
-        });
-        return currentRetryQueue;
+      navigate('/learn', {
+        state: {
+          lessonCompleted: true,
+          score: result.score ?? 0,
+          correctAnswers: result.correct_answers ?? result.correctAnswers ?? 0,
+          totalQuestions: result.total_questions ?? result.totalQuestions ?? totalQuestions,
+          reward: (result.reward?.diamonds ?? result.Reward?.diamonds) || (level?.reward_points as number) || 0,
+          perfectScore: !hadWrongAnswer && masteredQuestionIds.size >= totalQuestions,
+        },
       });
     } catch (err) {
       console.error('Error completing lesson:', err);
@@ -102,78 +93,58 @@ export default function LessonPage() {
         state: {
           lessonCompleted: true,
           score: 0,
-          correctAnswers: 0,
+          correctAnswers: masteredQuestionIds.size,
           totalQuestions,
           reward: (level?.reward_points as number) || 0,
-          perfectScore: true,
+          perfectScore: false,
         },
       });
     }
-  }, [navigate, totalQuestions, level]);
+  }, [navigate, totalQuestions, level, hadWrongAnswer, masteredQuestionIds.size]);
+
+  const applyNextStep = useCallback(
+    (next: NextPayload) => {
+      if (next.kind === 'question' && next.question) {
+        setCurrentQuestion(next.question);
+        setTextCard(null);
+        setSelectedChoices([]);
+        setQuestionResult(null);
+        setIsAnswering(false);
+        return;
+      }
+
+      if (next.kind === 'text') {
+        setCurrentQuestion(null);
+        setTextCard({
+          level_step_id: next.level_step_id,
+          title: next.title,
+          body: next.body,
+        });
+        setQuestionResult(null);
+        setIsAnswering(false);
+        return;
+      }
+
+      void completeLesson();
+    },
+    [completeLesson]
+  );
 
   const proceedToNext = useCallback(
-    async (attemptId: number, retryQueue: Map<number, Question>) => {
+    async (attemptId: number) => {
       try {
         const raw = await apiClient.getNextQuestion(attemptId);
         const next = raw as NextPayload;
         if (!isMountedRef.current) return;
-
-        if (next && next.kind === 'question' && next.question) {
-          setCurrentQuestion(next.question);
-          setTextCard(null);
-          setSelectedChoices([]);
-          setQuestionResult(null);
-          setIsAnswering(false);
-          setCurrentQuestionIndex((p) => p + 1);
-          return;
-        }
-
-        if (next && next.kind === 'text') {
-          setCurrentQuestion(null);
-          setTextCard({
-            level_step_id: next.level_step_id,
-            title: next.title,
-            body: next.body,
-          });
-          setQuestionResult(null);
-          setIsAnswering(false);
-          return;
-        }
-
-        const finalRetryList = Array.from(retryQueue.values());
-        if (finalRetryList.length > 0) {
-          const firstRetryQuestion = finalRetryList[0];
-          retryQueue.delete(firstRetryQuestion.id);
-          setQuestionsToRetry(new Map(retryQueue));
-          setCurrentQuestion(firstRetryQuestion);
-          setTextCard(null);
-          setSelectedChoices([]);
-          setQuestionResult(null);
-          setIsAnswering(false);
-          return;
-        }
-
-        await completeLesson();
+        applyNextStep(next);
       } catch (e) {
         console.error('Error advancing lesson:', e);
-        const finalRetryList = Array.from(retryQueue.values());
-        if (finalRetryList.length > 0) {
-          const firstRetryQuestion = finalRetryList[0];
-          retryQueue.delete(firstRetryQuestion.id);
-          setQuestionsToRetry(new Map(retryQueue));
-          if (isMountedRef.current) {
-            setCurrentQuestion(firstRetryQuestion);
-            setTextCard(null);
-            setSelectedChoices([]);
-            setQuestionResult(null);
-            setIsAnswering(false);
-          }
-        } else if (isMountedRef.current) {
+        if (isMountedRef.current) {
           await completeLesson();
         }
       }
     },
-    [completeLesson]
+    [applyNextStep, completeLesson]
   );
 
   useEffect(() => {
@@ -185,16 +156,15 @@ export default function LessonPage() {
     if (user && id) {
       void startLesson();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, loading, id, navigate]);
 
   const startLesson = async () => {
     try {
       setLoadingState(true);
       setError(null);
-      setScore(0);
-      setQuestionsToRetry(new Map());
-      answeredCorrectRef.current = new Set();
-      setCurrentQuestionIndex(1);
+      setMasteredQuestionIds(new Set());
+      setHadWrongAnswer(false);
       setSelectedChoices([]);
       setQuestionResult(null);
       setTextCard(null);
@@ -204,7 +174,8 @@ export default function LessonPage() {
       setLevel(levelData);
 
       const qCount =
-        (levelData.steps as Array<{ type?: string }> | undefined)?.filter((s) => s.type === 'question').length ?? 0;
+        (levelData.steps as Array<{ type?: string }> | undefined)?.filter((s) => s.type === 'question')
+          .length ?? 0;
       setTotalQuestions(qCount);
 
       const attemptData = await apiClient.startAttempt(parseInt(id!, 10));
@@ -231,23 +202,7 @@ export default function LessonPage() {
         return;
       }
 
-      if (next.kind === 'text') {
-        setTextCard({
-          level_step_id: next.level_step_id,
-          title: next.title,
-          body: next.body,
-        });
-        setCurrentQuestion(null);
-        return;
-      }
-
-      if (next.kind === 'question' && next.question) {
-        setCurrentQuestion(next.question);
-        setTextCard(null);
-        return;
-      }
-
-      setError('Не удалось загрузить урок');
+      applyNextStep(next);
     } catch (err) {
       console.error('Error starting lesson:', err);
       setError(err instanceof Error ? err.message : 'Ошибка загрузки урока');
@@ -263,7 +218,7 @@ export default function LessonPage() {
     try {
       setIsAnswering(true);
       await apiClient.acknowledgeTextStep(att.id, card.level_step_id);
-      await proceedToNext(att.id, new Map(retryRef.current));
+      await proceedToNext(att.id);
     } catch (err) {
       console.error(err);
       setError(err instanceof Error ? err.message : 'Ошибка');
@@ -287,40 +242,25 @@ export default function LessonPage() {
 
       setQuestionResult(result);
 
-      const currentQuestionId = currentQuestion.id;
-
       if (result.correct) {
-        setQuestionsToRetry((prev) => {
-          const newMap = new Map(prev);
-          newMap.delete(currentQuestionId);
-          return newMap;
+        setMasteredQuestionIds((prev) => {
+          if (prev.has(currentQuestion.id)) return prev;
+          const next = new Set(prev);
+          next.add(currentQuestion.id);
+          return next;
         });
-        if (!answeredCorrectRef.current.has(currentQuestionId)) {
-          answeredCorrectRef.current.add(currentQuestionId);
-          setScore((s) => s + 1);
-        }
       } else {
-        setQuestionsToRetry((prev) => {
-          const newMap = new Map(prev);
-          newMap.set(currentQuestionId, currentQuestion);
-          return newMap;
-        });
+        setHadWrongAnswer(true);
       }
 
       if (pendingTimeoutRef.current) {
         clearTimeout(pendingTimeoutRef.current);
       }
       pendingTimeoutRef.current = window.setTimeout(() => {
-        setQuestionsToRetry((currentRetryQueue) => {
-          if (!isMountedRef.current) {
-            return currentRetryQueue;
-          }
-          const aid = attemptRef.current?.id;
-          if (!aid) return currentRetryQueue;
-          void proceedToNext(aid, new Map(currentRetryQueue));
-          return currentRetryQueue;
-        });
-      }, 3000);
+        const aid = attemptRef.current?.id;
+        if (!aid || !isMountedRef.current) return;
+        void proceedToNext(aid);
+      }, result.correct ? 1200 : 2200);
     } catch (err) {
       console.error('Error answering question:', err);
       setError(err instanceof Error ? err.message : 'Ошибка ответа на вопрос');
@@ -366,49 +306,31 @@ export default function LessonPage() {
     );
   }
 
-  const retryCount = questionsToRetry.size;
   return (
     <div className="min-h-screen bg-neutral-950 text-zinc-100">
       <header className="sticky top-0 z-50 border-b border-zinc-800 bg-zinc-950">
         <div className="container mx-auto px-4 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <button
-                aria-label="Закрыть урок"
-                onClick={async () => {
-                  cancelPendingTransition();
-                  try {
-                    if (attemptRef.current?.id) {
-                      await apiClient.cancelAttempt(attemptRef.current.id);
-                    }
-                  } catch {
-                    /* ignore */
+          <div className="mb-3 flex items-center gap-3">
+            <button
+              aria-label="Закрыть урок"
+              onClick={async () => {
+                cancelPendingTransition();
+                try {
+                  if (attemptRef.current?.id) {
+                    await apiClient.cancelAttempt(attemptRef.current.id);
                   }
-                  navigate('/learn');
-                }}
-                className="text-2xl leading-none text-zinc-400 hover:text-white"
-              >
-                ×
-              </button>
-              <h1 className="text-xl font-bold text-white">{String(level?.title || 'Урок')}</h1>
-            </div>
-            <div className="flex flex-wrap items-center gap-2 sm:gap-4">
-              {textCard && (
-                <Badge className="border border-zinc-700 bg-zinc-800 text-zinc-200">Инфо</Badge>
-              )}
-              {currentQuestion && totalQuestions > 0 && (
-                <Badge className="border border-zinc-700 bg-zinc-800 text-zinc-200">
-                  Вопрос {currentQuestionIndex} из {totalQuestions}
-                </Badge>
-              )}
-              {totalQuestions > 0 && (
-                <Badge className="border border-zinc-600 bg-zinc-700 text-white">Правильно: {score}</Badge>
-              )}
-              {retryCount > 0 && (
-                <Badge className="border border-zinc-600 bg-zinc-800 text-zinc-300">Исправление: {retryCount}</Badge>
-              )}
-            </div>
+                } catch {
+                  /* ignore */
+                }
+                navigate('/learn');
+              }}
+              className="shrink-0 text-2xl leading-none text-zinc-400 hover:text-white"
+            >
+              ×
+            </button>
+            {totalQuestions > 0 && <Progress value={progressPercent} className="h-2 flex-1" />}
           </div>
+          <h1 className="truncate text-lg font-bold text-white">{String(level?.title || 'Урок')}</h1>
         </div>
       </header>
 
@@ -444,7 +366,7 @@ export default function LessonPage() {
                   <div className="mb-2 flex items-center gap-2">
                     <span className="text-2xl">{questionResult.correct ? '✅' : '❌'}</span>
                     <span className={`font-bold ${questionResult.correct ? 'text-white' : 'text-red-400'}`}>
-                      {questionResult.correct ? 'Правильно!' : 'Неправильно'}
+                      {questionResult.correct ? 'Правильно!' : 'Неправильно — вернёмся к этому вопросу в конце'}
                     </span>
                   </div>
                   {questionResult.explanation && <p className="text-zinc-300">{questionResult.explanation}</p>}

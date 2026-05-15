@@ -1,14 +1,110 @@
 import { useAuth } from '@/contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Sidebar } from '@/components/Sidebar';
-import { MenuButton } from '@/components/MenuButton';
-import { Card } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
+import { AppHeader } from '@/components/AppHeader';
+import { useAchievementsCatalog } from '@/shared/hooks/useAPI';
+import type { AchievementCatalogItem } from '@/types/api';
+import { cn } from '@/lib/utils';
+
+function formatAwardDate(iso?: string) {
+  if (!iso) return null;
+  try {
+    return new Date(iso).toLocaleDateString('ru-RU', {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+    });
+  } catch {
+    return null;
+  }
+}
+
+function StatBlock({
+  label,
+  value,
+  hint,
+}: {
+  label: string;
+  value: string | number;
+  hint?: string;
+}) {
+  return (
+    <div className="rounded-2xl border border-zinc-800 bg-black px-5 py-4">
+      <p className="text-[10px] font-medium uppercase tracking-[0.2em] text-zinc-500">{label}</p>
+      <p className="mt-2 text-2xl font-semibold tabular-nums text-white">{value}</p>
+      {hint && <p className="mt-1 text-xs text-zinc-500">{hint}</p>}
+    </div>
+  );
+}
+
+function AchievementRow({ item }: { item: AchievementCatalogItem }) {
+  const pct =
+    item.max_progress > 0 ? Math.min(100, Math.round((item.progress / item.max_progress) * 100)) : 0;
+  const awarded = formatAwardDate(item.awarded_at);
+
+  return (
+    <li
+      className={cn(
+        'rounded-2xl border px-5 py-4 transition-all duration-300 ease-out',
+        'hover:-translate-y-1 hover:scale-[1.02] hover:shadow-lg hover:shadow-black/50',
+        item.unlocked
+          ? 'border-zinc-600 bg-zinc-900/40 hover:border-zinc-500'
+          : 'border-zinc-800 bg-black hover:border-zinc-700'
+      )}
+    >
+      <div className="flex gap-4">
+        <div
+          className={cn(
+            'flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border text-2xl',
+            item.unlocked ? 'border-zinc-600 bg-zinc-800' : 'border-zinc-800 bg-zinc-950 grayscale opacity-60'
+          )}
+          aria-hidden
+        >
+          {item.icon}
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <h3 className={cn('font-semibold', item.unlocked ? 'text-white' : 'text-zinc-300')}>
+              {item.name}
+            </h3>
+            <span className="shrink-0 text-xs font-medium text-zinc-400">+{item.points} 💎</span>
+          </div>
+          <p className="mt-1.5 text-sm leading-relaxed text-zinc-500">{item.description}</p>
+
+          {!item.unlocked && item.max_progress > 1 && (
+            <div className="mt-4">
+              <div className="flex items-center justify-between text-[11px] font-medium text-zinc-500">
+                <span>Прогресс</span>
+                <span className="tabular-nums">
+                  {item.progress} / {item.max_progress}
+                </span>
+              </div>
+              <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-zinc-900">
+                <div
+                  className="h-full rounded-full bg-zinc-100 transition-[width] duration-500"
+                  style={{ width: `${pct}%` }}
+                />
+              </div>
+            </div>
+          )}
+
+          {item.unlocked && awarded && (
+            <p className="mt-3 text-xs text-emerald-400/90">Получено {awarded}</p>
+          )}
+          {item.unlocked && !awarded && (
+            <p className="mt-3 text-xs text-emerald-400/90">Разблокировано</p>
+          )}
+        </div>
+      </div>
+    </li>
+  );
+}
 
 export default function AchievementsPage() {
   const { user, loading } = useAuth();
   const navigate = useNavigate();
+  const { achievements, loading: catalogLoading, error } = useAchievementsCatalog();
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   useEffect(() => {
@@ -17,152 +113,94 @@ export default function AchievementsPage() {
     }
   }, [user, loading, navigate]);
 
-  if (loading || !user) {
+  const { unlocked, locked, totalPoints } = useMemo(() => {
+    const u = achievements.filter((a) => a.unlocked);
+    const l = achievements.filter((a) => !a.unlocked);
+    const pts = u.reduce((sum, a) => sum + a.points, 0);
+    return { unlocked: u, locked: l, totalPoints: pts };
+  }, [achievements]);
+
+  const pageLoading = loading || !user || catalogLoading;
+
+  if (pageLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-neutral-950 text-zinc-100">
-        <div className="text-2xl">Loading...</div>
+      <div className="flex min-h-screen bg-neutral-950 text-zinc-100">
+        <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+        <div className="flex min-h-screen flex-1 flex-col lg:ml-64">
+          <div className="flex-1 px-4 py-8 lg:px-8">
+            <div className="mb-8 h-10 max-w-xs animate-pulse rounded-lg bg-zinc-900" />
+            <div className="mb-8 grid gap-4 sm:grid-cols-3">
+              {[0, 1, 2].map((i) => (
+                <div key={i} className="h-24 animate-pulse rounded-2xl border border-zinc-800 bg-black" />
+              ))}
+            </div>
+            <div className="space-y-3">
+              {Array.from({ length: 6 }).map((_, i) => (
+                <div key={i} className="h-28 animate-pulse rounded-2xl border border-zinc-800 bg-black" />
+              ))}
+            </div>
+          </div>
+        </div>
       </div>
     );
   }
 
-  // Mock achievements data
-  const achievements = [
-    {
-      id: 1,
-      name: "First Steps",
-      description: "Complete your first lesson",
-      icon: "🎯",
-      unlocked: true,
-      points: 10,
-      unlockedAt: "2024-01-15"
-    },
-    {
-      id: 2,
-      name: "Streak Master",
-      description: "Maintain a 7-day streak",
-      icon: "🔥",
-      unlocked: true,
-      points: 50,
-      unlockedAt: "2024-01-20"
-    },
-    {
-      id: 3,
-      name: "Knowledge Seeker",
-      description: "Complete 10 lessons",
-      icon: "📚",
-      unlocked: false,
-      points: 100,
-      progress: 7
-    },
-    {
-      id: 4,
-      name: "Perfectionist",
-      description: "Get 100% on 5 lessons",
-      icon: "⭐",
-      unlocked: false,
-      points: 75,
-      progress: 2
-    }
-  ];
-
-  const unlockedAchievements = achievements.filter(a => a.unlocked);
-  const lockedAchievements = achievements.filter(a => !a.unlocked);
-
   return (
-    <div className="min-h-screen bg-neutral-950 text-zinc-100 flex">
-      {/* Sidebar */}
+    <div className="flex min-h-screen bg-neutral-950 text-zinc-100">
       <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
-      
-      {/* Main Content */}
-      <div className="flex-1 lg:ml-0">
-        <header className="bg-zinc-950 border-b border-zinc-800">
-          <div className="container mx-auto px-4 py-4">
-            <div className="flex items-center gap-4">
-              <MenuButton onClick={() => setSidebarOpen(!sidebarOpen)} isOpen={sidebarOpen} />
-              <h1 className="text-2xl font-bold text-white">Achievements</h1>
-            </div>
+
+      <div className="flex-1 lg:ml-64">
+        <AppHeader sidebarOpen={sidebarOpen} onMenuClick={() => setSidebarOpen(!sidebarOpen)} />
+
+        <div className="px-4 py-8 lg:px-8">
+          <div className="mb-8">
+            <h1 className="text-2xl font-bold text-white sm:text-3xl">Достижения</h1>
+            <p className="mt-2 max-w-2xl text-sm text-zinc-500">
+              Награды за уроки, стрики и точность. Прогресс обновляется после прохождения уроков.
+            </p>
           </div>
-        </header>
 
-        <div className="container mx-auto px-4 py-8 max-w-4xl">
-          <div className="space-y-6">
-            {/* Stats */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-              <Card className="p-6 text-center hover:shadow-lg hover:scale-105 transition-all duration-300 cursor-pointer">
-                <div className="text-3xl mb-2">🏆</div>
-                <div className="text-2xl font-bold text-white">{unlockedAchievements.length}</div>
-                <div className="text-sm text-zinc-400">Unlocked</div>
-              </Card>
-              <Card className="p-6 text-center hover:shadow-lg hover:scale-105 transition-all duration-300 cursor-pointer">
-                <div className="text-3xl mb-2">🔒</div>
-                <div className="text-2xl font-bold text-zinc-300">{lockedAchievements.length}</div>
-                <div className="text-sm text-zinc-400">Locked</div>
-              </Card>
-              <Card className="p-6 text-center hover:shadow-lg hover:scale-105 transition-all duration-300 cursor-pointer">
-                <div className="text-3xl mb-2">⭐</div>
-                <div className="text-2xl font-bold text-white">
-                  {unlockedAchievements.reduce((sum, a) => sum + a.points, 0)}
-                </div>
-                <div className="text-sm text-zinc-400">Total Points</div>
-              </Card>
-            </div>
+          {error && (
+            <p className="mb-6 rounded-2xl border border-red-900/50 bg-red-950/30 px-4 py-3 text-sm text-red-300" role="alert">
+              {error}
+            </p>
+          )}
 
-            {/* Unlocked Achievements */}
-            <div>
-              <h2 className="text-xl font-bold text-white mb-4">Unlocked Achievements</h2>
-              <div className="grid md:grid-cols-2 gap-4">
-                {unlockedAchievements.map((achievement) => (
-                  <Card key={achievement.id} className="p-6 border-2 border-zinc-600 bg-zinc-900/80 hover:shadow-xl hover:scale-105 transition-all duration-300 cursor-pointer">
-                    <div className="flex items-center gap-4">
-                      <div className="text-5xl">{achievement.icon}</div>
-                      <div className="flex-1">
-                        <h3 className="font-bold text-white mb-1">{achievement.name}</h3>
-                        <p className="text-sm text-zinc-400 mb-2">{achievement.description}</p>
-                        <div className="flex items-center gap-2">
-                          <Badge className="bg-zinc-700 text-zinc-100">
-                            +{achievement.points} 💎
-                          </Badge>
-                          <span className="text-xs text-zinc-500">
-                            Unlocked {achievement.unlockedAt ? new Date(achievement.unlockedAt).toLocaleDateString() : 'Recently'}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  </Card>
+          <div className="mb-10 grid gap-4 sm:grid-cols-3">
+            <StatBlock label="Получено" value={unlocked.length} hint="из каталога" />
+            <StatBlock label="В процессе" value={locked.length} hint="ещё можно открыть" />
+            <StatBlock label="Алмазы за награды" value={totalPoints} hint="только разблокированные" />
+          </div>
+
+          {unlocked.length > 0 && (
+            <section className="mb-10">
+              <h2 className="mb-4 text-xs font-semibold uppercase tracking-[0.2em] text-zinc-500">
+                Ваши достижения
+              </h2>
+              <ul className="space-y-3">
+                {unlocked.map((item) => (
+                  <AchievementRow key={item.id} item={item} />
                 ))}
-              </div>
-            </div>
+              </ul>
+            </section>
+          )}
 
-            {/* Locked Achievements */}
-            {lockedAchievements.length > 0 && (
-              <div>
-                <h2 className="text-xl font-bold text-white mb-4">Locked Achievements</h2>
-                <div className="grid md:grid-cols-2 gap-4">
-                  {lockedAchievements.map((achievement) => (
-                    <Card key={achievement.id} className="p-6 border-2 border-zinc-800 bg-zinc-950/80 opacity-90 hover:opacity-100 hover:shadow-lg transition-all duration-300 cursor-pointer">
-                      <div className="flex items-center gap-4">
-                        <div className="text-5xl grayscale opacity-70">{achievement.icon}</div>
-                        <div className="flex-1">
-                          <h3 className="font-bold text-zinc-300 mb-1">{achievement.name}</h3>
-                          <p className="text-sm text-zinc-500 mb-2">{achievement.description}</p>
-                          <div className="flex items-center gap-2">
-                            <Badge className="bg-zinc-800 text-zinc-400">
-                              +{achievement.points} 💎
-                            </Badge>
-                            {achievement.progress && (
-                              <span className="text-xs text-zinc-500">
-                                {achievement.progress}/10 progress
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    </Card>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
+          {locked.length > 0 && (
+            <section>
+              <h2 className="mb-4 text-xs font-semibold uppercase tracking-[0.2em] text-zinc-500">
+                Ещё не открыты
+              </h2>
+              <ul className="space-y-3">
+                {locked.map((item) => (
+                  <AchievementRow key={item.id} item={item} />
+                ))}
+              </ul>
+            </section>
+          )}
+
+          {achievements.length === 0 && !error && (
+            <p className="text-sm text-zinc-500">Достижения пока не добавлены в каталог.</p>
+          )}
         </div>
       </div>
     </div>

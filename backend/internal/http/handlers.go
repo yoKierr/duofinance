@@ -270,6 +270,8 @@ func MeHandler(authService core.AuthService, userService core.UserService) gin.H
 			diamonds = 0
 		}
 
+		avatar := core.ProfileAvatarFromMeta(profile.Meta)
+
 		c.JSON(http.StatusOK, APIResponse{
 			Success: true,
 			Data: UserInfo{
@@ -279,6 +281,7 @@ func MeHandler(authService core.AuthService, userService core.UserService) gin.H
 				Profile: &ProfileInfo{
 					Streak:   profile.Streak,
 					Diamonds: diamonds,
+					Avatar:   avatar,
 					Stats:    make(map[string]interface{}), // TODO: правильно обработать datatypes.JSON
 				},
 			},
@@ -454,8 +457,8 @@ func GetLevelsByTopicHandler(levelService core.LevelService) gin.HandlerFunc {
 
 // User handlers
 
-// UpdateProfileHandler - обновление профиля пользователя
-func UpdateProfileHandler(userService core.UserService) gin.HandlerFunc {
+// UpdateProfileHandler - обновление имени и аватара пользователя
+func UpdateProfileHandler(authService core.AuthService, userService core.UserService) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		userID, err := GetUserIDFromContext(c)
 		if err != nil {
@@ -469,8 +472,8 @@ func UpdateProfileHandler(userService core.UserService) gin.HandlerFunc {
 			return
 		}
 
-		var updates map[string]interface{}
-		if err := c.ShouldBindJSON(&updates); err != nil {
+		var req UpdateProfileRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
 			c.JSON(http.StatusBadRequest, APIResponse{
 				Success: false,
 				Error: &APIError{
@@ -482,23 +485,79 @@ func UpdateProfileHandler(userService core.UserService) gin.HandlerFunc {
 			return
 		}
 
-		err = userService.UpdateProfile(c.Request.Context(), userID, updates)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, APIResponse{
+		if req.Username == nil && req.Avatar == nil {
+			c.JSON(http.StatusBadRequest, APIResponse{
 				Success: false,
 				Error: &APIError{
-					Code:    ErrCodeInternal,
-					Message: "Failed to update profile",
-					Details: err.Error(),
+					Code:    ErrCodeValidation,
+					Message: "Nothing to update",
 				},
 			})
 			return
 		}
 
+		_, err = userService.UpdateUserProfile(c.Request.Context(), userID, req.Username, req.Avatar)
+		if err != nil {
+			switch {
+			case errors.Is(err, core.ErrInvalidUsername), errors.Is(err, core.ErrInvalidAvatar), errors.Is(err, core.ErrAvatarTooLarge):
+				c.JSON(http.StatusBadRequest, APIResponse{
+					Success: false,
+					Error: &APIError{
+						Code:    ErrCodeValidation,
+						Message: err.Error(),
+					},
+				})
+			case errors.Is(err, core.ErrUsernameTaken):
+				c.JSON(http.StatusConflict, APIResponse{
+					Success: false,
+					Error: &APIError{
+						Code:    ErrCodeUserExists,
+						Message: "Username already taken",
+					},
+				})
+			default:
+				c.JSON(http.StatusInternalServerError, APIResponse{
+					Success: false,
+					Error: &APIError{
+						Code:    ErrCodeInternal,
+						Message: "Failed to update profile",
+						Details: err.Error(),
+					},
+				})
+			}
+			return
+		}
+
+		user, err := authService.GetCurrentUser(c.Request.Context(), userID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, APIResponse{
+				Success: false,
+				Error: &APIError{
+					Code:    ErrCodeInternal,
+					Message: "Failed to load user",
+				},
+			})
+			return
+		}
+
+		profile, err := userService.GetProfile(c.Request.Context(), userID)
+		if err != nil {
+			profile = &domain.Profile{UserID: userID, Streak: 0}
+		}
+
+		diamonds, _ := userService.GetDiamondsBalance(c.Request.Context(), userID)
+
 		c.JSON(http.StatusOK, APIResponse{
 			Success: true,
-			Data: gin.H{
-				"message": "Profile updated successfully",
+			Data: UserInfo{
+				ID:       user.ID,
+				Email:    user.Email,
+				Username: user.Username,
+				Profile: &ProfileInfo{
+					Streak:   profile.Streak,
+					Diamonds: diamonds,
+					Avatar:   core.ProfileAvatarFromMeta(profile.Meta),
+				},
 			},
 		})
 	}
@@ -661,6 +720,64 @@ func GetAllAchievementsHandler(achievementService core.AchievementService) gin.H
 	}
 }
 
+// GetAchievementsCatalogHandler — каталог достижений с прогрессом для текущего пользователя.
+func GetAchievementsCatalogHandler(achievementService core.AchievementService) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		userID, err := GetUserIDFromContext(c)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, APIResponse{
+				Success: false,
+				Error: &APIError{
+					Code:    ErrCodeInternal,
+					Message: "Failed to get user ID",
+				},
+			})
+			return
+		}
+
+		items, err := achievementService.GetCatalogForUser(c.Request.Context(), userID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, APIResponse{
+				Success: false,
+				Error: &APIError{
+					Code:    ErrCodeInternal,
+					Message: "Failed to get achievements catalog",
+					Details: err.Error(),
+				},
+			})
+			return
+		}
+
+		var catalog []AchievementCatalogInfo
+		for _, item := range items {
+			info := AchievementCatalogInfo{
+				ID:          item.ID,
+				Code:        item.Code,
+				Name:        item.Name,
+				Description: item.Description,
+				Icon:        item.Icon,
+				Points:      item.Points,
+				Unlocked:    item.Unlocked,
+				Progress:    item.Progress,
+				MaxProgress: item.MaxProgress,
+			}
+			if item.AwardedAt != nil {
+				ts := item.AwardedAt.Format(time.RFC3339)
+				info.AwardedAt = &ts
+			}
+			catalog = append(catalog, info)
+		}
+
+		c.JSON(http.StatusOK, APIResponse{
+			Success: true,
+			Data:    catalog,
+			Meta: &Meta{
+				Total: len(catalog),
+			},
+		})
+	}
+}
+
 // GetUserAchievementsHandler - получение достижений пользователя
 func GetUserAchievementsHandler(achievementService core.AchievementService) gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -754,6 +871,134 @@ func GetAchievementProgressHandler(achievementService core.AchievementService) g
 		c.JSON(http.StatusOK, APIResponse{
 			Success: true,
 			Data:    progress,
+		})
+	}
+}
+
+// GetShopItemsHandler — каталог магазина
+func GetShopItemsHandler(achievementService core.AchievementService) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		userID, err := GetUserIDFromContext(c)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, APIResponse{
+				Success: false,
+				Error: &APIError{
+					Code:    ErrCodeInternal,
+					Message: "Failed to get user ID",
+				},
+			})
+			return
+		}
+
+		items, err := achievementService.GetShopItemsForUser(c.Request.Context(), userID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, APIResponse{
+				Success: false,
+				Error: &APIError{
+					Code:    ErrCodeInternal,
+					Message: "Failed to get shop items",
+				},
+			})
+			return
+		}
+
+		var catalog []ShopItemInfo
+		for _, item := range items {
+			catalog = append(catalog, ShopItemInfo{
+				ID:          item.ID,
+				Code:        item.Code,
+				Name:        item.Name,
+				Description: item.Description,
+				Icon:        item.Icon,
+				Price:       item.Price,
+				Owned:       item.Owned,
+			})
+		}
+
+		c.JSON(http.StatusOK, APIResponse{
+			Success: true,
+			Data:    catalog,
+			Meta: &Meta{
+				Total: len(catalog),
+			},
+		})
+	}
+}
+
+// PurchaseShopItemHandler — покупка достижения за алмазы
+func PurchaseShopItemHandler(achievementService core.AchievementService) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		userID, err := GetUserIDFromContext(c)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, APIResponse{
+				Success: false,
+				Error: &APIError{
+					Code:    ErrCodeInternal,
+					Message: "Failed to get user ID",
+				},
+			})
+			return
+		}
+
+		var req ShopPurchaseRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, APIResponse{
+				Success: false,
+				Error: &APIError{
+					Code:    ErrCodeValidation,
+					Message: "Invalid request data",
+					Details: err.Error(),
+				},
+			})
+			return
+		}
+
+		result, err := achievementService.PurchaseShopItem(c.Request.Context(), userID, req.AchievementID)
+		if err != nil {
+			switch {
+			case errors.Is(err, core.ErrShopItemNotFound):
+				c.JSON(http.StatusNotFound, APIResponse{
+					Success: false,
+					Error: &APIError{
+						Code:    ErrCodeNotFound,
+						Message: "Товар не найден",
+					},
+				})
+			case errors.Is(err, core.ErrAchievementOwned):
+				c.JSON(http.StatusConflict, APIResponse{
+					Success: false,
+					Error: &APIError{
+						Code:    ErrCodeConflict,
+						Message: "Достижение уже куплено",
+					},
+				})
+			case errors.Is(err, core.ErrInsufficientDiamonds):
+				c.JSON(http.StatusPaymentRequired, APIResponse{
+					Success: false,
+					Error: &APIError{
+						Code:    ErrCodeInsufficientFunds,
+						Message: "Недостаточно алмазов",
+					},
+				})
+			default:
+				c.JSON(http.StatusInternalServerError, APIResponse{
+					Success: false,
+					Error: &APIError{
+						Code:    ErrCodeInternal,
+						Message: "Failed to purchase item",
+						Details: err.Error(),
+					},
+				})
+			}
+			return
+		}
+
+		c.JSON(http.StatusOK, APIResponse{
+			Success: true,
+			Data: ShopPurchaseResponse{
+				AchievementID: result.AchievementID,
+				Balance:       result.Balance,
+			},
 		})
 	}
 }

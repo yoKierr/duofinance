@@ -3,6 +3,8 @@ export interface Stats {
   currentStreak: number
   longestStreak: number
   completedLevels: number
+  /** Стрик продлён сегодня (урок завершён в текущие сутки). */
+  streakExtendedToday?: boolean
 }
 
 export interface RewardBalance {
@@ -19,6 +21,34 @@ export interface Achievement {
   icon: string
   points: number
   unlocked?: boolean
+}
+
+export interface ShopItem {
+  id: number
+  code: string
+  name: string
+  description: string
+  icon: string
+  price: number
+  owned: boolean
+}
+
+export interface ShopPurchaseResult {
+  achievement_id: number
+  balance: number
+}
+
+export interface AchievementCatalogItem {
+  id: number
+  code: string
+  name: string
+  description: string
+  icon: string
+  points: number
+  unlocked: boolean
+  awarded_at?: string
+  progress: number
+  max_progress: number
 }
 
 export interface Level {
@@ -50,18 +80,32 @@ export interface UserStats {
   completed_levels: number
   total_diamonds: number
   current_streak: number
+  streak_extended_today?: boolean
   average_score: number
   achievements_count: number
 }
 
 // Дополнительные типы для API
+export interface UserProfile {
+  streak?: number
+  diamonds?: number
+  avatar?: string
+}
+
 export interface User {
   id: number
   username: string
   email: string
   displayName?: string
-  created_at: string
-  updated_at: string
+  avatar?: string
+  profile?: UserProfile
+  created_at?: string
+  updated_at?: string
+}
+
+export interface UpdateProfilePayload {
+  username?: string
+  avatar?: string
 }
 
 export interface Profile {

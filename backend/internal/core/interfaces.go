@@ -77,6 +77,9 @@ type UserService interface {
 	// Обновить профиль пользователя
 	UpdateProfile(ctx context.Context, userID uint, updates map[string]interface{}) error
 
+	// Обновить имя пользователя и/или аватар
+	UpdateUserProfile(ctx context.Context, userID uint, username, avatar *string) (*domain.User, error)
+
 	// Получить баланс алмазов
 	GetDiamondsBalance(ctx context.Context, userID uint) (int64, error)
 
@@ -115,6 +118,13 @@ type AchievementService interface {
 
 	// Получить прогресс по достижению
 	GetAchievementProgress(ctx context.Context, userID, achievementID uint) (*AchievementProgress, error)
+
+	// Каталог достижений с прогрессом для пользователя
+	GetCatalogForUser(ctx context.Context, userID uint) ([]*AchievementCatalogItem, error)
+
+	// Магазин достижений
+	GetShopItemsForUser(ctx context.Context, userID uint) ([]*ShopItem, error)
+	PurchaseShopItem(ctx context.Context, userID, achievementID uint) (*ShopPurchaseResult, error)
 }
 
 // AttemptResult - результат завершения попытки
@@ -149,9 +159,10 @@ type UserStats struct {
 	TotalAttempts     int     `json:"total_attempts"`
 	CompletedLevels   int     `json:"completed_levels"`
 	TotalDiamonds     int64   `json:"total_diamonds"`
-	CurrentStreak     int     `json:"current_streak"`
-	AverageScore      float64 `json:"average_score"`
-	AchievementsCount int     `json:"achievements_count"`
+	CurrentStreak       int  `json:"current_streak"`
+	StreakExtendedToday bool `json:"streak_extended_today"`
+	AverageScore        float64 `json:"average_score"`
+	AchievementsCount   int     `json:"achievements_count"`
 }
 
 // AchievementProgress - прогресс по достижению

@@ -59,7 +59,14 @@ type UserInfo struct {
 type ProfileInfo struct {
 	Streak   int                    `json:"streak"`
 	Diamonds int64                  `json:"diamonds"`
+	Avatar   string                 `json:"avatar,omitempty"`
 	Stats    map[string]interface{} `json:"stats,omitempty"`
+}
+
+// UpdateProfileRequest — обновление имени и аватара
+type UpdateProfileRequest struct {
+	Username *string `json:"username"`
+	Avatar   *string `json:"avatar"`
 }
 
 // StartAttemptRequest - запрос на начало попытки
@@ -166,9 +173,10 @@ type UserStats struct {
 	TotalAttempts     int     `json:"total_attempts"`
 	CompletedLevels   int     `json:"completed_levels"`
 	TotalDiamonds     int64   `json:"total_diamonds"`
-	CurrentStreak     int     `json:"current_streak"`
-	AverageScore      float64 `json:"average_score"`
-	AchievementsCount int     `json:"achievements_count"`
+	CurrentStreak       int  `json:"current_streak"`
+	StreakExtendedToday bool `json:"streak_extended_today"`
+	AverageScore        float64 `json:"average_score"`
+	AchievementsCount   int     `json:"achievements_count"`
 }
 
 // AchievementInfo - информация о достижении
@@ -179,6 +187,42 @@ type AchievementInfo struct {
 	Description string `json:"description"`
 	Icon        string `json:"icon"`
 	Points      int    `json:"points"`
+}
+
+// AchievementCatalogInfo — достижение с прогрессом для каталога.
+type AchievementCatalogInfo struct {
+	ID          uint    `json:"id"`
+	Code        string  `json:"code"`
+	Name        string  `json:"name"`
+	Description string  `json:"description"`
+	Icon        string  `json:"icon"`
+	Points      int     `json:"points"`
+	Unlocked    bool    `json:"unlocked"`
+	AwardedAt   *string `json:"awarded_at,omitempty"`
+	Progress    int     `json:"progress"`
+	MaxProgress int     `json:"max_progress"`
+}
+
+// ShopItemInfo — товар в магазине
+type ShopItemInfo struct {
+	ID          uint   `json:"id"`
+	Code        string `json:"code"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Icon        string `json:"icon"`
+	Price       int    `json:"price"`
+	Owned       bool   `json:"owned"`
+}
+
+// ShopPurchaseRequest — покупка достижения
+type ShopPurchaseRequest struct {
+	AchievementID uint `json:"achievement_id" binding:"required"`
+}
+
+// ShopPurchaseResponse — ответ после покупки
+type ShopPurchaseResponse struct {
+	AchievementID uint  `json:"achievement_id"`
+	Balance       int64 `json:"balance"`
 }
 
 // Коды ошибок

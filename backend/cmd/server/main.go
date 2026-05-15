@@ -58,9 +58,9 @@ func main() {
 	authService := core.NewAuthService(userRepo, jwtManager)
 	userService := core.NewUserService(userRepo, rewardTxRepo, attemptRepo)
 	levelService := core.NewLevelService(levelRepo, questionRepo, attemptRepo)
-	attemptService := core.NewAttemptService(attemptRepo, levelRepo, questionRepo, rewardTxRepo, userService)
 	rewardService := core.NewRewardService(rewardTxRepo)
-	achievementService := core.NewAchievementService(achievementRepo, userRepo)
+	achievementService := core.NewAchievementService(achievementRepo, userRepo, attemptRepo, rewardTxRepo)
+	attemptService := core.NewAttemptService(attemptRepo, levelRepo, questionRepo, rewardTxRepo, userService, achievementService)
 
 	// Создаем структуру сервисов
 	services := http.NewServices(

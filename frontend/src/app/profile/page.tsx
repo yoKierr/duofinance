@@ -1,34 +1,36 @@
 import { useAuth } from '@/contexts/AuthContext';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
-import { Card } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Progress } from '@/components/ui/progress';
-import { useUserStats, useDiamondsBalance, useAchievements } from '@/shared/hooks/useAPI';
-import type { Stats, RewardBalance, Achievement } from '@/types/api';
+import { Settings } from 'lucide-react';
 import { Sidebar } from '@/components/Sidebar';
+import { AppHeader } from '@/components/AppHeader';
+import { UserAvatar } from '@/components/UserAvatar';
+import { useUserStats, useDiamondsBalance } from '@/shared/hooks/useAPI';
+
+function StatBlock({
+  label,
+  value,
+  hint,
+}: {
+  label: string;
+  value: string | number;
+  hint?: string;
+}) {
+  return (
+    <div className="rounded-2xl border border-zinc-800 bg-black px-5 py-4">
+      <p className="text-[10px] font-medium uppercase tracking-[0.2em] text-zinc-500">{label}</p>
+      <p className="mt-2 text-2xl font-semibold tabular-nums text-white">{value}</p>
+      {hint && <p className="mt-1 text-xs text-zinc-500">{hint}</p>}
+    </div>
+  );
+}
 
 export default function ProfilePage() {
-  const { user, loading, logout } = useAuth();
+  const { user, loading } = useAuth();
   const navigate = useNavigate();
   const { stats: userStats, loading: statsLoading } = useUserStats();
   const { balance: diamondsBalance, loading: balanceLoading } = useDiamondsBalance();
-  const { achievements, loading: achievementsLoading } = useAchievements();
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  
-  // Преобразуем данные бэкенда в формат фронтенда
-  const stats: Stats = {
-    currentStreak: userStats?.current_streak || 0,
-    longestStreak: userStats?.current_streak || 0, // TODO: добавить в бэкенд
-    completedLevels: userStats?.completed_levels || 0,
-  };
-  
-  const balance: RewardBalance = {
-    diamonds: diamondsBalance || 0,
-    gems: 0, // TODO: добавить в бэкенд
-    coins: 0, // TODO: добавить в бэкенд
-  };
 
   useEffect(() => {
     if (!loading && !user) {
@@ -36,118 +38,97 @@ export default function ProfilePage() {
     }
   }, [user, loading, navigate]);
 
-  if (loading || !user || statsLoading || balanceLoading || achievementsLoading) {
+  const pageLoading = loading || !user || statsLoading || balanceLoading;
+
+  if (pageLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-neutral-950 text-zinc-100">
-        <div className="text-2xl">Loading...</div>
+      <div className="flex min-h-screen bg-neutral-950 text-zinc-100">
+        <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+        <div className="flex min-h-screen flex-1 flex-col lg:ml-64">
+          <div className="flex-1 px-4 py-8 lg:px-8">
+            <div className="mb-8 h-10 max-w-xs animate-pulse rounded-lg bg-zinc-900" />
+            <div className="mb-8 grid gap-4 sm:grid-cols-3">
+              {[0, 1, 2].map((i) => (
+                <div key={i} className="h-24 animate-pulse rounded-2xl border border-zinc-800 bg-black" />
+              ))}
+            </div>
+          </div>
+        </div>
       </div>
     );
   }
 
-  const userAchievements = achievements.filter(a => a.unlocked).slice(0, 3);
+  const streak = userStats?.current_streak ?? 0;
+  const lessons = userStats?.completed_levels ?? 0;
+  const diamonds = diamondsBalance ?? userStats?.total_diamonds ?? 0;
 
   return (
-    <div className="min-h-screen bg-neutral-950 text-zinc-100 flex">
-      {/* Sidebar */}
+    <div className="flex min-h-screen bg-neutral-950 text-zinc-100">
       <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
-      
-      {/* Main Content (без header) */}
+
       <div className="flex-1 lg:ml-64">
-        <div className="container mx-auto px-4 py-8 max-w-4xl">
-          <div className="bg-zinc-900 border border-zinc-800 rounded-3xl shadow-lg p-8 mb-8 hover:shadow-xl hover:scale-105 transition-all duration-300">
-          <div className="flex items-center gap-6 mb-8">
-            <div className="w-24 h-24 rounded-full bg-gradient-to-br from-neutral-700 to-neutral-900 flex items-center justify-center text-white font-bold text-4xl">
-              {user.username.charAt(0).toUpperCase()}
+        <AppHeader sidebarOpen={sidebarOpen} onMenuClick={() => setSidebarOpen(!sidebarOpen)} />
+
+        <div className="px-4 py-8 lg:px-8">
+          <div className="mb-8 flex items-start justify-between gap-4">
+            <div>
+              <h1 className="text-2xl font-bold text-white sm:text-3xl">Профиль</h1>
+              <p className="mt-2 max-w-2xl text-sm text-zinc-500">
+                Ваша статистика обучения. Настройки аккаунта — через шестерёнку.
+              </p>
             </div>
-            <div className="flex-1">
-              <h1 className="text-3xl font-bold text-white mb-2">
-                {user.displayName || user.username}
-              </h1>
-              <p className="text-zinc-400">@{user.username}</p>
-            </div>
+            <Link
+              to="/settings"
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-zinc-800 bg-black text-zinc-300 transition-all duration-200 hover:-translate-y-0.5 hover:border-zinc-600 hover:bg-zinc-900 hover:text-white"
+              aria-label="Настройки"
+            >
+              <Settings className="h-5 w-5" strokeWidth={2} />
+            </Link>
           </div>
 
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-4 justify-items-center">
-            <div className="text-center p-4 bg-zinc-800 rounded-2xl border border-zinc-700 w-full max-w-[200px]">
-              <div className="text-3xl mb-2">🔥</div>
-              <div className="text-2xl font-bold text-white">{stats.currentStreak}</div>
-              <div className="text-sm text-zinc-400">Day Streak</div>
+          <section className="mb-10 flex items-center gap-5 rounded-2xl border border-zinc-800 bg-black p-6">
+            <UserAvatar username={user.username} avatar={user.avatar} className="h-16 w-16 text-2xl" />
+            <div className="min-w-0">
+              <p className="truncate text-lg font-semibold text-white">{user.username}</p>
+              <p className="truncate text-sm text-zinc-500">{user.email}</p>
             </div>
-            <div className="text-center p-4 bg-zinc-800 rounded-2xl border border-zinc-700 w-full max-w-[200px]">
-              <div className="text-3xl mb-2">💎</div>
-              <div className="text-2xl font-bold text-white">{balance.diamonds}</div>
-              <div className="text-sm text-zinc-400">Diamonds</div>
-            </div>
-            <div className="text-center p-4 bg-zinc-800 rounded-2xl border border-zinc-700 w-full max-w-[200px]">
-              <div className="text-3xl mb-2">✅</div>
-              <div className="text-2xl font-bold text-white">{stats.completedLevels}</div>
-              <div className="text-sm text-zinc-400">Lessons</div>
-            </div>
+          </section>
+
+          <div className="mb-10 grid gap-4 sm:grid-cols-3">
+            <StatBlock label="Стрик" value={streak} hint="дней подряд" />
+            <StatBlock label="Алмазы" value={diamonds} />
+            <StatBlock label="Уроки" value={lessons} hint="завершено" />
           </div>
-        </div>
 
-        <div className="bg-zinc-900 border border-zinc-800 rounded-3xl shadow-lg p-8 mb-8 hover:shadow-xl hover:scale-105 transition-all duration-300">
-          <h2 className="text-2xl font-bold text-white mb-6">Statistics</h2>
-          <div className="space-y-6">
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <span className="font-semibold text-zinc-300">Current Streak</span>
-                <span className="text-white font-bold">{stats.currentStreak} days 🔥</span>
+          <section className="rounded-2xl border border-zinc-800 bg-black p-6 sm:p-8">
+            <h2 className="mb-6 text-xs font-semibold uppercase tracking-[0.2em] text-zinc-500">
+              Подробная статистика
+            </h2>
+            <dl className="space-y-4">
+              <div className="flex items-center justify-between border-b border-zinc-900 pb-4">
+                <dt className="text-sm text-zinc-400">Текущий стрик</dt>
+                <dd className="font-semibold tabular-nums text-white">{streak} дн.</dd>
               </div>
-              <Progress value={(stats.currentStreak / 30) * 100} className="h-3" />
-            </div>
-
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <span className="font-semibold text-zinc-300">Longest Streak</span>
-                <span className="text-zinc-200 font-bold">{stats.longestStreak} days</span>
+              <div className="flex items-center justify-between border-b border-zinc-900 pb-4">
+                <dt className="text-sm text-zinc-400">Завершённых уроков</dt>
+                <dd className="font-semibold tabular-nums text-white">{lessons}</dd>
               </div>
-            </div>
-
-
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <span className="font-semibold text-zinc-300">Completed Levels</span>
-                <span className="text-white font-bold">{stats.completedLevels}</span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-zinc-900 border border-zinc-800 rounded-3xl shadow-lg p-8">
-          <h2 className="text-2xl font-bold text-white mb-6">Achievements</h2>
-          <div className="grid md:grid-cols-2 gap-4">
-            {userAchievements.map((achievement) => (
-              <Card key={achievement.id} className="p-6 border-2 border-zinc-700 rounded-2xl hover:shadow-lg hover:scale-105 transition-all duration-300 cursor-pointer">
-                <div className="flex items-center gap-4">
-                  <div className="text-5xl">{achievement.icon}</div>
-                  <div className="flex-1">
-                    <h3 className="font-bold text-white mb-1">{achievement.name}</h3>
-                    <p className="text-sm text-zinc-400 mb-2">{achievement.description}</p>
-                    <Badge className="bg-zinc-700 text-zinc-100">
-                      +{achievement.points} 💎
-                    </Badge>
-                  </div>
+              {userStats && userStats.total_attempts > 0 && (
+                <div className="flex items-center justify-between border-b border-zinc-900 pb-4">
+                  <dt className="text-sm text-zinc-400">Всего попыток</dt>
+                  <dd className="font-semibold tabular-nums text-white">{userStats.total_attempts}</dd>
                 </div>
-              </Card>
-            ))}
-          </div>
-
-          <div className="mt-6 text-center">
-            <p className="text-zinc-500 text-sm">
-              {achievements.length - userAchievements.length} more achievements to unlock
-            </p>
-          </div>
-        </div>
-
-        <div className="mt-8 text-center">
-          <Link
-            to="/courses"
-            className="finstart-button finstart-button-primary px-8 py-3 text-base inline-block hover:scale-105 transition-transform duration-200"
-          >
-            К курсам
-          </Link>
-        </div>
+              )}
+              {userStats && userStats.average_score > 0 && (
+                <div className="flex items-center justify-between">
+                  <dt className="text-sm text-zinc-400">Средняя точность</dt>
+                  <dd className="font-semibold tabular-nums text-white">
+                    {Math.round(userStats.average_score)}%
+                  </dd>
+                </div>
+              )}
+            </dl>
+          </section>
         </div>
       </div>
     </div>

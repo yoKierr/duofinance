@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/ImCtyz/duofinance/backend/internal/auth"
@@ -182,6 +183,56 @@ func (s *userService) UpdateProfile(ctx context.Context, userID uint, updates ma
 	return s.userRepo.UpdateProfile(ctx, profile)
 }
 
+func (s *userService) UpdateUserProfile(ctx context.Context, userID uint, username, avatar *string) (*domain.User, error) {
+	user, err := s.userRepo.GetByID(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	if username != nil {
+		un := strings.TrimSpace(*username)
+		if err := validateUsername(un); err != nil {
+			return nil, err
+		}
+		existing, err := s.userRepo.GetByUsername(ctx, un)
+		if err == nil && existing.ID != userID {
+			return nil, ErrUsernameTaken
+		}
+		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, err
+		}
+		user.Username = un
+		if err := s.userRepo.Update(ctx, user); err != nil {
+			return nil, err
+		}
+	}
+
+	if avatar != nil {
+		if err := validateAvatarDataURL(*avatar); err != nil {
+			return nil, err
+		}
+		profile, err := s.userRepo.GetProfile(ctx, userID)
+		if err != nil {
+			return nil, err
+		}
+		patch := map[string]interface{}{}
+		if *avatar == "" {
+			patch["avatar"] = nil
+		} else {
+			patch["avatar"] = *avatar
+		}
+		profile.Meta, err = mergeProfileMeta(profile.Meta, patch)
+		if err != nil {
+			return nil, err
+		}
+		if err := s.userRepo.UpdateProfile(ctx, profile); err != nil {
+			return nil, err
+		}
+	}
+
+	return user, nil
+}
+
 func (s *userService) GetDiamondsBalance(ctx context.Context, userID uint) (int64, error) {
 	return s.rewardTxRepo.GetBalance(ctx, userID)
 }
@@ -232,13 +283,35 @@ func (s *userService) GetUserStats(ctx context.Context, userID uint) (*UserStats
 	}
 
 	return &UserStats{
-		TotalAttempts:     totalAttempts,
-		CompletedLevels:   completedLevels,
-		TotalDiamonds:     balance,
-		CurrentStreak:     profile.Streak,
-		AverageScore:      averageScore,
-		AchievementsCount: 0,
+		TotalAttempts:       totalAttempts,
+		CompletedLevels:     completedLevels,
+		TotalDiamonds:       balance,
+		CurrentStreak:       profile.Streak,
+		StreakExtendedToday: isStreakExtendedToday(profile),
+		AverageScore:        averageScore,
+		AchievementsCount:   0,
 	}, nil
+}
+
+// isStreakExtendedToday — урок, продлевающий стрик, уже пройден сегодня (streak_last_date в meta).
+func isStreakExtendedToday(profile *domain.Profile) bool {
+	var meta map[string]interface{}
+	if profile.Meta != nil && len(profile.Meta) > 0 {
+		_ = json.Unmarshal(profile.Meta, &meta)
+	}
+	if meta == nil {
+		return false
+	}
+	tzName, _ := meta["timezone"].(string)
+	loc := time.UTC
+	if tzName != "" {
+		if l, err := time.LoadLocation(tzName); err == nil {
+			loc = l
+		}
+	}
+	today := time.Now().In(loc).Format("2006-01-02")
+	last, _ := meta["streak_last_date"].(string)
+	return last == today
 }
 
 func (s *userService) UpdateStreak(ctx context.Context, userID uint) error {
@@ -385,20 +458,29 @@ func (s *levelService) IsLevelAvailable(ctx context.Context, levelID, userID uin
 }
 
 type attemptService struct {
-	attemptRepo  repo.AttemptRepo
-	levelRepo    repo.LevelRepo
-	questionRepo repo.QuestionRepo
-	rewardTxRepo repo.RewardTxRepo
-	userService  UserService
+	attemptRepo        repo.AttemptRepo
+	levelRepo          repo.LevelRepo
+	questionRepo       repo.QuestionRepo
+	rewardTxRepo       repo.RewardTxRepo
+	userService        UserService
+	achievementService AchievementService
 }
 
-func NewAttemptService(attemptRepo repo.AttemptRepo, levelRepo repo.LevelRepo, questionRepo repo.QuestionRepo, rewardTxRepo repo.RewardTxRepo, userService UserService) AttemptService {
+func NewAttemptService(
+	attemptRepo repo.AttemptRepo,
+	levelRepo repo.LevelRepo,
+	questionRepo repo.QuestionRepo,
+	rewardTxRepo repo.RewardTxRepo,
+	userService UserService,
+	achievementService AchievementService,
+) AttemptService {
 	return &attemptService{
-		attemptRepo:  attemptRepo,
-		levelRepo:    levelRepo,
-		questionRepo: questionRepo,
-		rewardTxRepo: rewardTxRepo,
-		userService:  userService,
+		attemptRepo:        attemptRepo,
+		levelRepo:          levelRepo,
+		questionRepo:       questionRepo,
+		rewardTxRepo:       rewardTxRepo,
+		userService:        userService,
+		achievementService: achievementService,
 	}
 }
 
@@ -515,12 +597,8 @@ func (s *attemptService) GetNextLessonStep(ctx context.Context, attemptID uint) 
 		return nil, err
 	}
 
-	answeredMap := make(map[uint]bool)
-	for _, step := range answeredSteps {
-		if step.LevelStepID != 0 {
-			answeredMap[step.LevelStepID] = true
-		}
-	}
+	completed := completedLevelSteps(answeredSteps)
+	deferred := deferredLevelSteps(answeredSteps)
 
 	steps := make([]*domain.LevelStep, len(level.Steps))
 	for i := range level.Steps {
@@ -530,46 +608,102 @@ func (s *attemptService) GetNextLessonStep(ctx context.Context, attemptID uint) 
 		return steps[i].Order < steps[j].Order
 	})
 
+	// Проход 1: по порядку урока, пропуская завершённые и отложенные (неверные) вопросы.
 	for _, step := range steps {
-		if answeredMap[step.ID] {
+		if completed[step.ID] || deferred[step.ID] {
 			continue
 		}
-		switch step.Type {
-		case "text":
-			body := ""
-			if len(step.Payload) > 0 {
-				var p struct {
-					Body string `json:"body"`
-				}
-				_ = json.Unmarshal(step.Payload, &p)
-				body = p.Body
-			}
-			title := step.Title
-			return &NextLessonStep{
-				Kind:        LessonStepKindText,
-				LevelStepID: step.ID,
-				Title:       title,
-				Body:        body,
-			}, nil
-		case "question":
-			if step.QuestionID == nil {
-				continue
-			}
-			question, err := s.questionRepo.GetWithChoices(ctx, *step.QuestionID)
-			if err != nil {
-				return nil, err
-			}
-			return &NextLessonStep{
-				Kind:        LessonStepKindQuestion,
-				LevelStepID: step.ID,
-				Question:    question,
-			}, nil
-		default:
+		if next, ok, err := s.lessonStepToNext(ctx, step); err != nil {
+			return nil, err
+		} else if ok {
+			return next, nil
+		}
+	}
+
+	// Проход 2: в конце — все вопросы, на которые ответили неверно.
+	for _, step := range steps {
+		if !deferred[step.ID] || completed[step.ID] {
 			continue
+		}
+		if next, ok, err := s.lessonStepToNext(ctx, step); err != nil {
+			return nil, err
+		} else if ok {
+			return next, nil
 		}
 	}
 
 	return nil, ErrNoMoreLessonSteps
+}
+
+func (s *attemptService) lessonStepToNext(ctx context.Context, step *domain.LevelStep) (*NextLessonStep, bool, error) {
+	switch step.Type {
+	case "text":
+		body := ""
+		if len(step.Payload) > 0 {
+			var p struct {
+				Body string `json:"body"`
+			}
+			_ = json.Unmarshal(step.Payload, &p)
+			body = p.Body
+		}
+		return &NextLessonStep{
+			Kind:        LessonStepKindText,
+			LevelStepID: step.ID,
+			Title:       step.Title,
+			Body:        body,
+		}, true, nil
+	case "question":
+		if step.QuestionID == nil {
+			return nil, false, nil
+		}
+		question, err := s.questionRepo.GetWithChoices(ctx, *step.QuestionID)
+		if err != nil {
+			return nil, false, err
+		}
+		return &NextLessonStep{
+			Kind:        LessonStepKindQuestion,
+			LevelStepID: step.ID,
+			Question:    question,
+		}, true, nil
+	default:
+		return nil, false, nil
+	}
+}
+
+// completedLevelSteps — шаги, которые пользователь прошёл: текст просмотрен, вопрос отвечен верно.
+func completedLevelSteps(answeredSteps []*domain.AttemptStep) map[uint]bool {
+	out := make(map[uint]bool)
+	for _, step := range answeredSteps {
+		if step.LevelStepID == 0 {
+			continue
+		}
+		if step.QuestionID == nil {
+			out[step.LevelStepID] = true
+			continue
+		}
+		if step.Correct {
+			out[step.LevelStepID] = true
+		}
+	}
+	return out
+}
+
+// deferredLevelSteps — вопросы с неверным ответом, ещё не отвеченные правильно (вернутся в конце).
+func deferredLevelSteps(answeredSteps []*domain.AttemptStep) map[uint]bool {
+	completed := completedLevelSteps(answeredSteps)
+	attemptedQuestions := make(map[uint]bool)
+	for _, step := range answeredSteps {
+		if step.LevelStepID != 0 && step.QuestionID != nil {
+			attemptedQuestions[step.LevelStepID] = true
+		}
+	}
+	out := make(map[uint]bool)
+	for levelStepID := range attemptedQuestions {
+		if !completed[levelStepID] {
+			out[levelStepID] = true
+		}
+	}
+	return out
 }
 
 func (s *attemptService) AcknowledgeTextStep(ctx context.Context, attemptID, userID, levelStepID uint) error {
@@ -880,9 +1014,26 @@ func (s *attemptService) CompleteAttempt(ctx context.Context, attemptID uint) (*
 		}
 	}
 
-	// Обновляем streak (огоньки) — не более одного раза в сутки
+	// Обновляем streak и проверяем достижения
 	if s.userService != nil {
 		_ = s.userService.UpdateStreak(ctx, attempt.UserID)
+	}
+	if s.achievementService != nil && score >= 70 {
+		durationMs := int64(0)
+		if attempt.CompletedAt != nil {
+			durationMs = attempt.CompletedAt.Sub(attempt.StartedAt).Milliseconds()
+		}
+		eventData := map[string]interface{}{
+			"score":       score,
+			"level_id":    attempt.LevelID,
+			"duration_ms": durationMs,
+		}
+		_ = s.achievementService.CheckAndAwardAchievements(ctx, attempt.UserID, "level_completed", eventData)
+		if profile, err := s.userService.GetProfile(ctx, attempt.UserID); err == nil && profile != nil {
+			_ = s.achievementService.CheckAndAwardAchievements(ctx, attempt.UserID, "streak_updated", map[string]interface{}{
+				"streak": profile.Streak,
+			})
+		}
 	}
 
 	result := &AttemptResult{
@@ -1024,10 +1175,22 @@ func (s *attemptService) CancelAttempt(ctx context.Context, attemptID uint, user
 type achievementService struct {
 	achievementRepo repo.AchievementRepo
 	userRepo        repo.UserRepo
+	attemptRepo     repo.AttemptRepo
+	rewardTxRepo    repo.RewardTxRepo
 }
 
-func NewAchievementService(achievementRepo repo.AchievementRepo, userRepo repo.UserRepo) AchievementService {
-	return &achievementService{achievementRepo: achievementRepo, userRepo: userRepo}
+func NewAchievementService(
+	achievementRepo repo.AchievementRepo,
+	userRepo repo.UserRepo,
+	attemptRepo repo.AttemptRepo,
+	rewardTxRepo repo.RewardTxRepo,
+) AchievementService {
+	return &achievementService{
+		achievementRepo: achievementRepo,
+		userRepo:        userRepo,
+		attemptRepo:     attemptRepo,
+		rewardTxRepo:    rewardTxRepo,
+	}
 }
 
 func (s *achievementService) GetAllAchievements(ctx context.Context) ([]*domain.Achievement, error) {
@@ -1039,82 +1202,58 @@ func (s *achievementService) GetUserAchievements(ctx context.Context, userID uin
 }
 
 func (s *achievementService) CheckAndAwardAchievements(ctx context.Context, userID uint, eventType string, data map[string]interface{}) error {
-	// Получаем все достижения
 	achievements, err := s.achievementRepo.GetAll(ctx)
 	if err != nil {
 		return err
 	}
 
-	// Простая логика проверки достижений
-	for _, achievement := range achievements {
-		// Проверяем, есть ли уже у пользователя это достижение
-		hasAchievement, err := s.achievementRepo.HasAchievement(ctx, userID, achievement.ID)
-		if err != nil {
-			continue
-		}
-		if hasAchievement {
-			continue
-		}
-
-		// Простые условия для достижений
-		shouldAward := false
-		switch achievement.Code {
-		case "first_steps":
-			// Первое прохождение уровня
-			if eventType == "level_completed" {
-				shouldAward = true
-			}
-		case "streak_3":
-			// 3 дня подряд
-			if eventType == "streak_updated" {
-				if streak, ok := data["streak"].(int); ok && streak >= 3 {
-					shouldAward = true
-				}
-			}
-		case "perfect_score":
-			// 100% правильных ответов
-			if eventType == "level_completed" {
-				if score, ok := data["score"].(int); ok && score == 100 {
-					shouldAward = true
-				}
-			}
-		}
-
-		if shouldAward {
-			err = s.achievementRepo.AwardToUser(ctx, userID, achievement.ID)
-			if err != nil {
-				// Логируем ошибку, но продолжаем
-				continue
-			}
-		}
+	st, err := s.collectUserStats(ctx, userID)
+	if err != nil {
+		return err
 	}
 
+	for _, achievement := range achievements {
+		if achievement.ShopPrice > 0 {
+			continue
+		}
+		has, err := s.achievementRepo.HasAchievement(ctx, userID, achievement.ID)
+		if err != nil || has {
+			continue
+		}
+		if s.shouldAward(achievement.Code, st, eventType, data) {
+			_ = s.achievementRepo.AwardToUser(ctx, userID, achievement.ID)
+		}
+	}
 	return nil
 }
 
 func (s *achievementService) GetAchievementProgress(ctx context.Context, userID, achievementID uint) (*AchievementProgress, error) {
-	// Получаем достижение
-	achievement, err := s.achievementRepo.GetByCode(ctx, "first_steps") // Упрощенная логика
+	achievement, err := s.achievementRepo.GetByID(ctx, achievementID)
 	if err != nil {
 		return nil, err
 	}
 
-	// Проверяем, есть ли у пользователя это достижение
-	hasAchievement, err := s.achievementRepo.HasAchievement(ctx, userID, achievementID)
+	has, err := s.achievementRepo.HasAchievement(ctx, userID, achievementID)
 	if err != nil {
 		return nil, err
 	}
 
+	maxProgress := achievementMaxProgress(achievement.Code)
 	progress := 0
-	maxProgress := 1
-	if hasAchievement {
-		progress = 1
+	if has {
+		progress = maxProgress
+	} else {
+		st, err := s.collectUserStats(ctx, userID)
+		if err != nil {
+			return nil, err
+		}
+		progress = achievementProgress(achievement.Code, st)
 	}
 
 	return &AchievementProgress{
 		Achievement: achievement,
 		Progress:    progress,
 		MaxProgress: maxProgress,
-		IsCompleted: hasAchievement,
+		IsCompleted: has,
 	}, nil
 }

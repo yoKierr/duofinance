@@ -3,10 +3,10 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { GlareCard } from '@/components/ui/glare-card';
-import { useLevels, useUserStats, useDiamondsBalance } from '@/shared/hooks/useAPI';
-import type { Level, Stats, RewardBalance } from '@/types/api';
+import { useLevels } from '@/shared/hooks/useAPI';
+import type { Level } from '@/types/api';
 import { Sidebar } from '@/components/Sidebar';
-import { MenuButton } from '@/components/MenuButton';
+import { AppHeader } from '@/components/AppHeader';
 import { cn } from '@/lib/utils';
 
 function ConfettiCanvas({ active }: { active: boolean }) {
@@ -224,25 +224,11 @@ export default function LearnPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const { levels, loading: levelsLoading } = useLevels();
-  const { stats: userStats, loading: statsLoading } = useUserStats();
-  const { balance: diamondsBalance, loading: balanceLoading } = useDiamondsBalance();
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const [showCompletionMessage, setShowCompletionMessage] = useState(false);
   const [completionData, setCompletionData] = useState<Record<string, unknown> | null>(null);
   const [expandedLevelId, setExpandedLevelId] = useState<number | null>(null);
-
-  const stats: Stats = {
-    currentStreak: userStats?.current_streak || 0,
-    longestStreak: userStats?.current_streak || 0,
-    completedLevels: userStats?.completed_levels || 0,
-  };
-
-  const balance: RewardBalance = {
-    diamonds: diamondsBalance || 0,
-    gems: 0,
-    coins: 0,
-  };
 
   useEffect(() => {
     if (!loading && !user) {
@@ -280,7 +266,7 @@ export default function LearnPage() {
     }
   }, [expandedLevelId, levels]);
 
-  if (loading || !user || levelsLoading || statsLoading || balanceLoading) {
+  if (loading || !user || levelsLoading) {
     return (
       <div className="flex min-h-screen bg-neutral-950 text-zinc-100">
         <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
@@ -315,39 +301,10 @@ export default function LearnPage() {
       <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
 
       <div className="flex-1 lg:ml-64">
-        <header className="sticky top-0 z-30 border-b border-zinc-800 bg-zinc-950">
-          <div className="container mx-auto px-4 py-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-4">
-                <MenuButton onClick={() => setSidebarOpen(!sidebarOpen)} isOpen={sidebarOpen} />
-              </div>
-
-              <div className="flex items-center gap-4">
-                <div className="flex items-center gap-2 rounded-full border border-zinc-700 bg-zinc-800 px-3 py-1 transition-colors hover:bg-zinc-700">
-                  <div className="flex h-6 w-6 items-center justify-center rounded-full bg-gradient-to-br from-neutral-500 to-neutral-700 text-sm text-white shadow">
-                    🔥
-                  </div>
-                  <span className="font-bold text-zinc-100">{stats.currentStreak}</span>
-                </div>
-                <div className="flex items-center gap-2 rounded-full border border-zinc-700 bg-zinc-800 px-3 py-1 transition-colors hover:bg-zinc-700">
-                  <div className="flex h-6 w-6 items-center justify-center rounded-full bg-gradient-to-br from-neutral-400 to-neutral-600 text-sm text-white shadow">
-                    💎
-                  </div>
-                  <span className="font-bold text-zinc-100">{balance.diamonds}</span>
-                </div>
-
-                <Link
-                  to="/profile"
-                  className="flex items-center gap-2 transition-opacity duration-200 hover:scale-110 hover:opacity-80"
-                >
-                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-neutral-700 to-neutral-900 font-bold text-white transition-all duration-200 hover:shadow-lg">
-                    {user.username.charAt(0).toUpperCase()}
-                  </div>
-                </Link>
-              </div>
-            </div>
-          </div>
-        </header>
+        <AppHeader
+          sidebarOpen={sidebarOpen}
+          onMenuClick={() => setSidebarOpen(!sidebarOpen)}
+        />
 
         <div className="px-4 py-8 lg:px-8">
           {showCompletionMessage && completionData && (

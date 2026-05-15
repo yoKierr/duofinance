@@ -2,6 +2,7 @@ package repo
 
 import (
 	"context"
+	"time"
 
 	"github.com/ImCtyz/duofinance/backend/internal/domain"
 )
@@ -110,11 +111,20 @@ type AchievementRepo interface {
 	// Получить все достижения
 	GetAll(ctx context.Context) ([]*domain.Achievement, error)
 
+	// Достижения, доступные в магазине
+	GetShopItems(ctx context.Context) ([]*domain.Achievement, error)
+
 	// Получить достижение по коду
 	GetByCode(ctx context.Context, code string) (*domain.Achievement, error)
 
+	// Получить достижение по ID
+	GetByID(ctx context.Context, id uint) (*domain.Achievement, error)
+
 	// Получить достижения пользователя
 	GetByUserID(ctx context.Context, userID uint) ([]*domain.Achievement, error)
+
+	// Даты выдачи достижений пользователю (achievement_id -> awarded_at)
+	ListAwardedAtByUser(ctx context.Context, userID uint) (map[uint]time.Time, error)
 
 	// Назначить достижение пользователю
 	AwardToUser(ctx context.Context, userID, achievementID uint) error

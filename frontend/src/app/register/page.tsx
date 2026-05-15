@@ -22,7 +22,7 @@ export default function RegisterPage() {
 
     try {
       await register({ email, username, password });
-      navigate('/courses');
+      navigate('/learn');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Registration failed');
     } finally {

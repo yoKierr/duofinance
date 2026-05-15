@@ -2,6 +2,8 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useNavigate, Link } from 'react-router-dom';
 import { useEffect } from 'react';
 import { BackgroundLines } from '@/components/ui/background-lines';
+import { TypewriterEffectSmooth } from '@/components/ui/typewriter-effect';
+import { FeatureGradientCards } from '@/components/landing/FeatureGradientCards';
 
 export default function Home() {
   const { user, loading } = useAuth();
@@ -59,41 +61,24 @@ export default function Home() {
         </section>
       </BackgroundLines>
 
-      <section id="features" className="max-w-6xl mx-auto px-6 pt-4 text-center">
-        <div className="grid md:grid-cols-3 gap-10">
-          <div className="flex flex-col items-center">
-            <div className="h-44 w-full max-w-sm rounded-2xl bg-zinc-900 border border-zinc-800 flex items-center justify-center">
-              <div className="w-16 h-16 bg-zinc-700 rounded-lg" aria-hidden="true" />
-            </div>
-            <h3 className="mt-6 font-semibold text-white">Курсы онлайн.</h3>
-            <p className="mt-2 text-xs leading-relaxed text-white max-w-[260px] mx-auto">
-              Учитесь в удобном формате в любое время. Курсы подходят для новичков.
-            </p>
-          </div>
+      <section className="border-t border-zinc-800 px-6 py-20 text-center sm:py-28">
+        <p className="text-xs text-zinc-500 sm:text-base">
+          Путь к финансовой уверенности начинается здесь
+        </p>
+        <TypewriterEffectSmooth
+          className="justify-center"
+          cursorClassName="bg-zinc-100"
+          words={[
+            { text: 'Учись' },
+            { text: 'управлять' },
+            { text: 'деньгами' },
+            { text: 'уверенно.', className: 'text-zinc-400' },
+          ]}
+        />
+      </section>
 
-          <div className="flex flex-col items-center">
-            <div className="h-44 w-full max-w-sm rounded-2xl bg-zinc-900 border border-zinc-800 flex items-center justify-center">
-              <div className="w-16 h-16 bg-zinc-700 rounded-full" aria-hidden="true" />
-            </div>
-            <h3 className="mt-6 font-semibold text-white">Простая подача.</h3>
-            <p className="mt-2 text-xs leading-relaxed text-white max-w-[260px] mx-auto">
-              Интерактивные задания и короткие объяснения в игровом формате.
-            </p>
-          </div>
-
-          <div className="flex flex-col items-center">
-            <div className="h-44 w-full max-w-sm rounded-2xl bg-zinc-900 border border-zinc-800 flex items-center justify-center">
-              <div
-                className="w-0 h-0 border-l-[34px] border-l-transparent border-r-[34px] border-r-transparent border-b-[58px] border-b-zinc-600"
-                aria-hidden="true"
-              />
-            </div>
-            <h3 className="mt-6 font-semibold text-white">Чёткие результаты.</h3>
-            <p className="mt-2 text-xs leading-relaxed text-white max-w-[260px] mx-auto">
-              Отслеживайте свой прогресс по уровням и темам.
-            </p>
-          </div>
-        </div>
+      <section id="features" className="mx-auto max-w-6xl px-6 pb-8 pt-4">
+        <FeatureGradientCards />
       </section>
 
       <section className="max-w-6xl mx-auto px-6 pt-28 pb-20 text-center">

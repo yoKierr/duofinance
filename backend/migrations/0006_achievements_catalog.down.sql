@@ -1,0 +1,2 @@
+DELETE FROM user_achievements WHERE achievement_id BETWEEN 5010 AND 5022;
+DELETE FROM achievements WHERE id BETWEEN 5010 AND 5022;

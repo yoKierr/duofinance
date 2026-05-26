@@ -1,0 +1,6 @@
+# Dev image: dependencies layer cached when package files change.
+# At runtime, ./frontend is bind-mounted; node_modules uses a named volume (see docker-compose).
+FROM node:20-alpine
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci

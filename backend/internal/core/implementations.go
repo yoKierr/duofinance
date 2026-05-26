@@ -1,0 +1,1259 @@
+package core
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"sort"
+	"strings"
+	"time"
+
+	"github.com/ImCtyz/duofinance/backend/internal/auth"
+	"github.com/ImCtyz/duofinance/backend/internal/domain"
+	"github.com/ImCtyz/duofinance/backend/internal/repo"
+	"golang.org/x/crypto/bcrypt"
+	"gorm.io/datatypes"
+	"gorm.io/gorm"
+)
+
+// Заглушки для сервисов - нужно будет реализовать
+
+type authService struct {
+	userRepo   repo.UserRepo
+	jwtManager *auth.JWTManager
+}
+
+func NewAuthService(userRepo repo.UserRepo, jwtManager *auth.JWTManager) AuthService {
+	return &authService{userRepo: userRepo, jwtManager: jwtManager}
+}
+
+func (s *authService) Register(ctx context.Context, email, username, password string) (*domain.User, error) {
+	// Проверяем, существует ли пользователь с таким email
+	existingUser, err := s.userRepo.GetByEmail(ctx, email)
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, err
+	}
+	if existingUser != nil {
+		return nil, errors.New("user with this email already exists")
+	}
+
+	// Проверяем, существует ли пользователь с таким username
+	existingUser, err = s.userRepo.GetByUsername(ctx, username)
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, err
+	}
+	if existingUser != nil {
+		return nil, errors.New("user with this username already exists")
+	}
+
+	// Хешируем пароль
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		return nil, err
+	}
+
+	// Создаем пользователя
+	user := &domain.User{
+		Email:        email,
+		Username:     username,
+		PasswordHash: string(hashedPassword),
+	}
+
+	// Сохраняем в БД
+	err = s.userRepo.Create(ctx, user)
+	if err != nil {
+		return nil, err
+	}
+
+	// Создаем профиль пользователя
+	profile := &domain.Profile{
+		UserID: user.ID,
+		Streak: 0,
+		Stats:  nil, // Пустая статистика
+		Meta:   nil, // Пустые метаданные
+	}
+
+	err = s.userRepo.UpdateProfile(ctx, profile)
+	if err != nil {
+		// Если профиль не создался, это не критично для регистрации
+		// Просто логируем ошибку
+	}
+
+	return user, nil
+}
+
+func (s *authService) Login(ctx context.Context, email, password string) (accessToken, refreshToken string, user *domain.User, err error) {
+	// Получаем пользователя по email
+	user, err = s.userRepo.GetByEmail(ctx, email)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return "", "", nil, errors.New("invalid email or password")
+		}
+		return "", "", nil, err
+	}
+
+	// Проверяем пароль
+	err = bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password))
+	if err != nil {
+		return "", "", nil, errors.New("invalid email or password")
+	}
+
+	// Генерируем токены
+	accessToken, refreshToken, err = s.jwtManager.GenerateTokens(user.ID, user.Email, user.Username)
+	if err != nil {
+		return "", "", nil, err
+	}
+
+	return accessToken, refreshToken, user, nil
+}
+
+func (s *authService) RefreshToken(ctx context.Context, refreshToken string) (newAccessToken, newRefreshToken string, err error) {
+	// Валидируем refresh токен
+	claims, err := s.jwtManager.ValidateRefreshToken(refreshToken)
+	if err != nil {
+		return "", "", err
+	}
+
+	// Получаем пользователя
+	user, err := s.userRepo.GetByID(ctx, claims.UserID)
+	if err != nil {
+		return "", "", err
+	}
+
+	// Генерируем новые токены
+	newAccessToken, newRefreshToken, err = s.jwtManager.GenerateTokens(user.ID, user.Email, user.Username)
+	if err != nil {
+		return "", "", err
+	}
+
+	return newAccessToken, newRefreshToken, nil
+}
+
+func (s *authService) GetCurrentUser(ctx context.Context, userID uint) (*domain.User, error) {
+	return s.userRepo.GetByID(ctx, userID)
+}
+
+func (s *authService) ValidateToken(ctx context.Context, token string) (userID uint, err error) {
+	claims, err := s.jwtManager.ValidateAccessToken(token)
+	if err != nil {
+		return 0, err
+	}
+	return claims.UserID, nil
+}
+
+func (s *authService) Logout(ctx context.Context, userID uint) error {
+	// В простой реализации JWT logout не требует действий на сервере
+	// В более сложной системе можно добавить blacklist токенов
+	return nil
+}
+
+type userService struct {
+	userRepo     repo.UserRepo
+	rewardTxRepo repo.RewardTxRepo
+	attemptRepo  repo.AttemptRepo
+}
+
+func NewUserService(userRepo repo.UserRepo, rewardTxRepo repo.RewardTxRepo, attemptRepo repo.AttemptRepo) UserService {
+	return &userService{userRepo: userRepo, rewardTxRepo: rewardTxRepo, attemptRepo: attemptRepo}
+}
+
+func (s *userService) GetProfile(ctx context.Context, userID uint) (*domain.Profile, error) {
+	return s.userRepo.GetProfile(ctx, userID)
+}
+
+func (s *userService) UpdateProfile(ctx context.Context, userID uint, updates map[string]interface{}) error {
+	profile, err := s.userRepo.GetProfile(ctx, userID)
+	if err != nil {
+		return err
+	}
+
+	// Обновляем поля профиля
+	if streak, ok := updates["streak"].(int); ok {
+		profile.Streak = streak
+	}
+	if stats, ok := updates["stats"].(map[string]interface{}); ok {
+		statsJSON, _ := json.Marshal(stats)
+		profile.Stats = datatypes.JSON(statsJSON)
+	}
+	if meta, ok := updates["meta"].(map[string]interface{}); ok {
+		metaJSON, _ := json.Marshal(meta)
+		profile.Meta = datatypes.JSON(metaJSON)
+	}
+
+	return s.userRepo.UpdateProfile(ctx, profile)
+}
+
+func (s *userService) UpdateUserProfile(ctx context.Context, userID uint, username, avatar *string) (*domain.User, error) {
+	user, err := s.userRepo.GetByID(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	if username != nil {
+		un := strings.TrimSpace(*username)
+		if err := validateUsername(un); err != nil {
+			return nil, err
+		}
+		existing, err := s.userRepo.GetByUsername(ctx, un)
+		if err == nil && existing.ID != userID {
+			return nil, ErrUsernameTaken
+		}
+		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, err
+		}
+		user.Username = un
+		if err := s.userRepo.Update(ctx, user); err != nil {
+			return nil, err
+		}
+	}
+
+	if avatar != nil {
+		if err := validateAvatarDataURL(*avatar); err != nil {
+			return nil, err
+		}
+		profile, err := s.userRepo.GetProfile(ctx, userID)
+		if err != nil {
+			return nil, err
+		}
+		patch := map[string]interface{}{}
+		if *avatar == "" {
+			patch["avatar"] = nil
+		} else {
+			patch["avatar"] = *avatar
+		}
+		profile.Meta, err = mergeProfileMeta(profile.Meta, patch)
+		if err != nil {
+			return nil, err
+		}
+		if err := s.userRepo.UpdateProfile(ctx, profile); err != nil {
+			return nil, err
+		}
+	}
+
+	return user, nil
+}
+
+func (s *userService) GetDiamondsBalance(ctx context.Context, userID uint) (int64, error) {
+	return s.rewardTxRepo.GetBalance(ctx, userID)
+}
+
+func (s *userService) GetUserStats(ctx context.Context, userID uint) (*UserStats, error) {
+	// Получаем профиль
+	profile, err := s.userRepo.GetProfile(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Получаем баланс алмазов
+	balance, err := s.rewardTxRepo.GetBalance(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Получаем все попытки пользователя
+	attempts, err := s.attemptRepo.GetByUserID(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Подсчитываем статистику
+	totalAttempts := len(attempts)
+	completedLevels := 0
+	totalScore := 0.0
+	completedLevelIDs := make(map[uint]bool)
+	completedAttempts := 0
+
+	// Проходим по всем попыткам
+	for _, attempt := range attempts {
+		if attempt.Status == "completed" && attempt.ResultScore >= 70 {
+			// Считаем уникальные завершенные уровни
+			if !completedLevelIDs[attempt.LevelID] {
+				completedLevels++
+				completedLevelIDs[attempt.LevelID] = true
+			}
+			totalScore += float64(attempt.ResultScore)
+			completedAttempts++
+		}
+	}
+
+	// Вычисляем средний балл
+	averageScore := 0.0
+	if completedAttempts > 0 {
+		averageScore = totalScore / float64(completedAttempts)
+	}
+
+	return &UserStats{
+		TotalAttempts:       totalAttempts,
+		CompletedLevels:     completedLevels,
+		TotalDiamonds:       balance,
+		CurrentStreak:       profile.Streak,
+		StreakExtendedToday: isStreakExtendedToday(profile),
+		AverageScore:        averageScore,
+		AchievementsCount:   0,
+	}, nil
+}
+
+// isStreakExtendedToday — урок, продлевающий стрик, уже пройден сегодня (streak_last_date в meta).
+func isStreakExtendedToday(profile *domain.Profile) bool {
+	var meta map[string]interface{}
+	if profile.Meta != nil && len(profile.Meta) > 0 {
+		_ = json.Unmarshal(profile.Meta, &meta)
+	}
+	if meta == nil {
+		return false
+	}
+	tzName, _ := meta["timezone"].(string)
+	loc := time.UTC
+	if tzName != "" {
+		if l, err := time.LoadLocation(tzName); err == nil {
+			loc = l
+		}
+	}
+	today := time.Now().In(loc).Format("2006-01-02")
+	last, _ := meta["streak_last_date"].(string)
+	return last == today
+}
+
+func (s *userService) UpdateStreak(ctx context.Context, userID uint) error {
+	profile, err := s.userRepo.GetProfile(ctx, userID)
+	if err != nil {
+		return err
+	}
+
+	var meta map[string]interface{}
+	if profile.Meta != nil && len(profile.Meta) > 0 {
+		_ = json.Unmarshal(profile.Meta, &meta)
+	}
+	if meta == nil {
+		meta = make(map[string]interface{})
+	}
+
+	// Определяем таймзону пользователя. Ожидаем IANA name в meta["timezone"].
+	// Если не задано или некорректно — используем UTC.
+	tzName, _ := meta["timezone"].(string)
+	loc := time.UTC
+	if tzName != "" {
+		if l, err := time.LoadLocation(tzName); err == nil {
+			loc = l
+		}
+	}
+
+	now := time.Now().In(loc)
+	today := now.Format("2006-01-02")
+	last, _ := meta["streak_last_date"].(string)
+
+	if last == today {
+		return nil
+	}
+
+	// Если последняя дата — вчера в выбранной таймзоне, инкрементируем,
+	// иначе считаем пропуск и начинаем с 1.
+	newStreak := 1
+	if last != "" {
+		// Вычисляем "вчера" в пользовательской таймзоне
+		yesterday := now.Add(-24 * time.Hour).Format("2006-01-02")
+		if last == yesterday {
+			newStreak = profile.Streak + 1
+		} else {
+			newStreak = 1
+		}
+	}
+
+	meta["streak_last_date"] = today
+	metaJSON, _ := json.Marshal(meta)
+	profile.Meta = datatypes.JSON(metaJSON)
+	profile.Streak = newStreak
+	return s.userRepo.UpdateProfile(ctx, profile)
+}
+
+type levelService struct {
+	levelRepo    repo.LevelRepo
+	questionRepo repo.QuestionRepo
+	attemptRepo  repo.AttemptRepo
+}
+
+func NewLevelService(levelRepo repo.LevelRepo, questionRepo repo.QuestionRepo, attemptRepo repo.AttemptRepo) LevelService {
+	return &levelService{levelRepo: levelRepo, questionRepo: questionRepo, attemptRepo: attemptRepo}
+}
+
+func (s *levelService) GetLevels(ctx context.Context) ([]*domain.Level, error) {
+	levels, err := s.levelRepo.GetAll(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return levels, nil
+}
+
+func (s *levelService) GetLevel(ctx context.Context, id uint) (*domain.Level, error) {
+	// С деталями шагов, если доступны
+	level, err := s.levelRepo.GetWithSteps(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	return level, nil
+}
+
+func (s *levelService) GetLevelsByTopic(ctx context.Context, topic string) ([]*domain.Level, error) {
+	levels, err := s.levelRepo.GetByTopic(ctx, topic)
+	if err != nil {
+		return nil, err
+	}
+	return levels, nil
+}
+
+func (s *levelService) IsLevelAvailable(ctx context.Context, levelID, userID uint) (bool, error) {
+	level, err := s.levelRepo.GetByID(ctx, levelID)
+	if err != nil {
+		return false, err
+	}
+	if !level.IsActive {
+		return false, nil
+	}
+
+	// Получаем активные уровни по порядку
+	levels, err := s.levelRepo.GetAll(ctx)
+	if err != nil {
+		return false, err
+	}
+
+	// Оставляем только активные
+	var activeLevels []*domain.Level
+	for _, l := range levels {
+		if l.IsActive {
+			activeLevels = append(activeLevels, l)
+		}
+	}
+
+	// Найдем позицию текущего уровня
+	idx := -1
+	for i, l := range activeLevels {
+		if l.ID == levelID {
+			idx = i
+			break
+		}
+	}
+	if idx == -1 {
+		return false, errors.New("level not found")
+	}
+
+	// Первый уровень всегда доступен
+	if idx == 0 {
+		return true, nil
+	}
+
+	// Требуется завершение предыдущего активного уровня
+	prev := activeLevels[idx-1]
+	attempts, err := s.attemptRepo.GetByUserID(ctx, userID)
+	if err != nil {
+		return false, err
+	}
+
+	for _, a := range attempts {
+		if a.LevelID == prev.ID && a.Status == domain.AttemptStatus("completed") && a.ResultScore >= 70 {
+			return true, nil
+		}
+	}
+
+	return false, nil
+}
+
+type attemptService struct {
+	attemptRepo        repo.AttemptRepo
+	levelRepo          repo.LevelRepo
+	questionRepo       repo.QuestionRepo
+	rewardTxRepo       repo.RewardTxRepo
+	userService        UserService
+	achievementService AchievementService
+}
+
+func NewAttemptService(
+	attemptRepo repo.AttemptRepo,
+	levelRepo repo.LevelRepo,
+	questionRepo repo.QuestionRepo,
+	rewardTxRepo repo.RewardTxRepo,
+	userService UserService,
+	achievementService AchievementService,
+) AttemptService {
+	return &attemptService{
+		attemptRepo:        attemptRepo,
+		levelRepo:          levelRepo,
+		questionRepo:       questionRepo,
+		rewardTxRepo:       rewardTxRepo,
+		userService:        userService,
+		achievementService: achievementService,
+	}
+}
+
+func (s *attemptService) StartAttempt(ctx context.Context, userID, levelID uint) (*domain.Attempt, error) {
+	// Проверяем, что уровень существует и активен
+	level, err := s.levelRepo.GetByID(ctx, levelID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, errors.New("level not found")
+		}
+		return nil, err
+	}
+	if !level.IsActive {
+		return nil, errors.New("level is not active")
+	}
+
+	// Доп. проверка: заблокирован ли уровень (нельзя начать, пока не завершен предыдущий)
+	// Определяем предыдущий активный уровень
+	levels, err := s.levelRepo.GetAll(ctx)
+	if err == nil {
+		var activeLevels []*domain.Level
+		for _, l := range levels {
+			if l.IsActive {
+				activeLevels = append(activeLevels, l)
+			}
+		}
+		// Найдем позицию текущего уровня среди активных
+		idx := -1
+		for i, l := range activeLevels {
+			if l.ID == levelID {
+				idx = i
+				break
+			}
+		}
+		if idx > 0 {
+			prev := activeLevels[idx-1]
+			// Проверяем завершение предыдущего уровня
+			userAttempts, err2 := s.attemptRepo.GetByUserID(ctx, userID)
+			if err2 == nil {
+				prevCompleted := false
+				for _, a := range userAttempts {
+					if a.LevelID == prev.ID && a.Status == domain.AttemptStatus("completed") && a.ResultScore >= 70 {
+						prevCompleted = true
+						break
+					}
+				}
+				if !prevCompleted {
+					return nil, errors.New("previous level not completed")
+				}
+			}
+		}
+	}
+
+	// Проверяем, нет ли уже активной попытки для этого уровня
+	existingAttempt, err := s.attemptRepo.GetActiveByUserAndLevel(ctx, userID, levelID)
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, err
+	}
+	if existingAttempt != nil {
+		// Санитарная проверка на "застрявшие" попытки: если нет больше вопросов, но статус in_progress — отменяем и создаем новую
+		if existingAttempt.Status == domain.AttemptInProgress {
+			next, err2 := s.GetNextLessonStep(ctx, existingAttempt.ID)
+			if err2 != nil {
+				if errors.Is(err2, ErrNoMoreLessonSteps) {
+					_ = s.CancelAttempt(ctx, existingAttempt.ID, userID)
+				} else {
+					return existingAttempt, nil
+				}
+			} else if next != nil {
+				return existingAttempt, nil
+			}
+		} else {
+			return existingAttempt, nil // уже завершена/failed — вернем
+		}
+	}
+
+	// Создаем новую попытку
+	attempt := &domain.Attempt{
+		UserID:      userID,
+		LevelID:     levelID,
+		Status:      "in_progress",
+		ResultScore: 0,
+		StartedAt:   time.Now(),
+	}
+
+	err = s.attemptRepo.Create(ctx, attempt)
+	if err != nil {
+		return nil, err
+	}
+
+	return attempt, nil
+}
+
+func (s *attemptService) GetNextLessonStep(ctx context.Context, attemptID uint) (*NextLessonStep, error) {
+	attempt, err := s.attemptRepo.GetByID(ctx, attemptID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, errors.New("attempt not found")
+		}
+		return nil, err
+	}
+
+	if attempt.Status != "in_progress" {
+		return nil, errors.New("attempt is not in progress")
+	}
+
+	level, err := s.levelRepo.GetWithSteps(ctx, attempt.LevelID)
+	if err != nil {
+		return nil, err
+	}
+
+	answeredSteps, err := s.attemptRepo.GetSteps(ctx, attemptID)
+	if err != nil {
+		return nil, err
+	}
+
+	completed := completedLevelSteps(answeredSteps)
+	deferred := deferredLevelSteps(answeredSteps)
+
+	steps := make([]*domain.LevelStep, len(level.Steps))
+	for i := range level.Steps {
+		steps[i] = &level.Steps[i]
+	}
+	sort.Slice(steps, func(i, j int) bool {
+		return steps[i].Order < steps[j].Order
+	})
+
+	// Проход 1: по порядку урока, пропуская завершённые и отложенные (неверные) вопросы.
+	for _, step := range steps {
+		if completed[step.ID] || deferred[step.ID] {
+			continue
+		}
+		if next, ok, err := s.lessonStepToNext(ctx, step); err != nil {
+			return nil, err
+		} else if ok {
+			return next, nil
+		}
+	}
+
+	// Проход 2: в конце — все вопросы, на которые ответили неверно.
+	for _, step := range steps {
+		if !deferred[step.ID] || completed[step.ID] {
+			continue
+		}
+		if next, ok, err := s.lessonStepToNext(ctx, step); err != nil {
+			return nil, err
+		} else if ok {
+			return next, nil
+		}
+	}
+
+	return nil, ErrNoMoreLessonSteps
+}
+
+func (s *attemptService) lessonStepToNext(ctx context.Context, step *domain.LevelStep) (*NextLessonStep, bool, error) {
+	switch step.Type {
+	case "text":
+		body := ""
+		if len(step.Payload) > 0 {
+			var p struct {
+				Body string `json:"body"`
+			}
+			_ = json.Unmarshal(step.Payload, &p)
+			body = p.Body
+		}
+		return &NextLessonStep{
+			Kind:        LessonStepKindText,
+			LevelStepID: step.ID,
+			Title:       step.Title,
+			Body:        body,
+		}, true, nil
+	case "question":
+		if step.QuestionID == nil {
+			return nil, false, nil
+		}
+		question, err := s.questionRepo.GetWithChoices(ctx, *step.QuestionID)
+		if err != nil {
+			return nil, false, err
+		}
+		return &NextLessonStep{
+			Kind:        LessonStepKindQuestion,
+			LevelStepID: step.ID,
+			Question:    question,
+		}, true, nil
+	default:
+		return nil, false, nil
+	}
+}
+
+// completedLevelSteps — шаги, которые пользователь прошёл: текст просмотрен, вопрос отвечен верно.
+func completedLevelSteps(answeredSteps []*domain.AttemptStep) map[uint]bool {
+	out := make(map[uint]bool)
+	for _, step := range answeredSteps {
+		if step.LevelStepID == 0 {
+			continue
+		}
+		if step.QuestionID == nil {
+			out[step.LevelStepID] = true
+			continue
+		}
+		if step.Correct {
+			out[step.LevelStepID] = true
+		}
+	}
+	return out
+}
+
+// deferredLevelSteps — вопросы с неверным ответом, ещё не отвеченные правильно (вернутся в конце).
+func deferredLevelSteps(answeredSteps []*domain.AttemptStep) map[uint]bool {
+	completed := completedLevelSteps(answeredSteps)
+	attemptedQuestions := make(map[uint]bool)
+	for _, step := range answeredSteps {
+		if step.LevelStepID != 0 && step.QuestionID != nil {
+			attemptedQuestions[step.LevelStepID] = true
+		}
+	}
+	out := make(map[uint]bool)
+	for levelStepID := range attemptedQuestions {
+		if !completed[levelStepID] {
+			out[levelStepID] = true
+		}
+	}
+	return out
+}
+
+func (s *attemptService) AcknowledgeTextStep(ctx context.Context, attemptID, userID, levelStepID uint) error {
+	attempt, err := s.attemptRepo.GetByID(ctx, attemptID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return errors.New("attempt not found")
+		}
+		return err
+	}
+	if attempt.UserID != userID {
+		return errors.New("forbidden")
+	}
+	if attempt.Status != "in_progress" {
+		return errors.New("attempt is not in progress")
+	}
+
+	level, err := s.levelRepo.GetWithSteps(ctx, attempt.LevelID)
+	if err != nil {
+		return err
+	}
+
+	var target *domain.LevelStep
+	for i := range level.Steps {
+		if level.Steps[i].ID == levelStepID {
+			target = &level.Steps[i]
+			break
+		}
+	}
+	if target == nil {
+		return errors.New("level step not found")
+	}
+	if target.Type != "text" {
+		return errors.New("not a text step")
+	}
+
+	answered, err := s.attemptRepo.GetSteps(ctx, attemptID)
+	if err != nil {
+		return err
+	}
+	for _, st := range answered {
+		if st.LevelStepID == levelStepID {
+			return nil
+		}
+	}
+
+	responseJSON, _ := json.Marshal(map[string]interface{}{"viewed": true, "at": time.Now().Format(time.RFC3339)})
+	attemptStep := &domain.AttemptStep{
+		AttemptID:   attemptID,
+		LevelStepID: levelStepID,
+		QuestionID:  nil,
+		StepOrder:   len(answered) + 1,
+		Response:    datatypes.JSON(responseJSON),
+		Correct:     true,
+		DurationMs:  0,
+	}
+	return s.attemptRepo.AddStep(ctx, attemptStep)
+}
+
+func (s *attemptService) AnswerQuestion(ctx context.Context, attemptID, questionID uint, choiceIDs []uint) (bool, string, error) {
+	attempt, err := s.attemptRepo.GetByID(ctx, attemptID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return false, "", errors.New("attempt not found")
+		}
+		return false, "", err
+	}
+
+	if attempt.Status != "in_progress" {
+		return false, "", errors.New("attempt is not in progress")
+	}
+
+	question, err := s.questionRepo.GetWithChoices(ctx, questionID)
+	if err != nil {
+		return false, "", err
+	}
+
+	var correctChoiceIDs []uint
+	for _, choice := range question.Choices {
+		if choice.IsCorrect {
+			correctChoiceIDs = append(correctChoiceIDs, choice.ID)
+		}
+	}
+
+	isCorrect := compareChoiceIDs(choiceIDs, correctChoiceIDs)
+
+	level, err := s.levelRepo.GetWithSteps(ctx, attempt.LevelID)
+	if err != nil {
+		return false, "", err
+	}
+
+	var levelStepID uint
+	for _, step := range level.Steps {
+		if step.Type == "question" && step.QuestionID != nil && *step.QuestionID == questionID {
+			levelStepID = step.ID
+			break
+		}
+	}
+
+	responseData := map[string]interface{}{
+		"question_id": questionID,
+		"choice_ids":  choiceIDs,
+		"answered_at": time.Now(),
+	}
+	responseJSON, _ := json.Marshal(responseData)
+
+	answered, err := s.attemptRepo.GetSteps(ctx, attemptID)
+	if err != nil {
+		return false, "", err
+	}
+
+	attemptStep := &domain.AttemptStep{
+		AttemptID:   attemptID,
+		LevelStepID: levelStepID,
+		QuestionID:  &questionID,
+		StepOrder:   len(answered) + 1,
+		Response:    datatypes.JSON(responseJSON),
+		Correct:     isCorrect,
+		DurationMs:  0,
+	}
+
+	err = s.attemptRepo.AddStep(ctx, attemptStep)
+	if err != nil {
+		return false, "", err
+	}
+
+	return isCorrect, question.Explanation, nil
+}
+
+func (s *attemptService) CompleteAttempt(ctx context.Context, attemptID uint) (*AttemptResult, error) {
+	// Получаем попытку
+	attempt, err := s.attemptRepo.GetByID(ctx, attemptID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, errors.New("attempt not found")
+		}
+		return nil, err
+	}
+
+	if attempt.Status != "in_progress" {
+		return nil, errors.New("attempt is already completed")
+	}
+
+	// Получаем все шаги попытки
+	steps, err := s.attemptRepo.GetSteps(ctx, attemptID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Подсчитываем результаты по уникальным вопросам, учитывая последний ответ пользователя
+	// Собираем последний ответ по каждому вопросу
+	type lastAnswer struct {
+		order   int
+		correct bool
+		step    *domain.AttemptStep
+	}
+	lastByQuestion := make(map[uint]lastAnswer)
+	for _, step := range steps {
+		if step.QuestionID == nil {
+			continue
+		}
+		qid := *step.QuestionID
+		la, ok := lastByQuestion[qid]
+		if !ok || step.StepOrder > la.order {
+			lastByQuestion[qid] = lastAnswer{order: step.StepOrder, correct: step.Correct, step: step}
+		}
+	}
+
+	// Общее число вопросов берем из структуры уровня
+	totalQuestions := 0
+	lvl, _ := s.levelRepo.GetWithSteps(ctx, attempt.LevelID)
+	if lvl != nil {
+		for _, st := range lvl.Steps {
+			if st.Type == "question" && st.QuestionID != nil {
+				totalQuestions++
+			}
+		}
+	} else {
+		// fallback: количество уникальных вопросов из шагов попытки
+		totalQuestions = len(lastByQuestion)
+	}
+
+	correctAnswers := 0
+	var wrongQuestions []*WrongQuestion
+
+	// Для подсчета количества правильно решенных вопросов (как X из N)
+	// используем ПОСЛЕДНИЙ ответ по каждому вопросу
+	for _, la := range lastByQuestion {
+		if la.correct {
+			correctAnswers++
+		}
+	}
+
+	// Для расчета точности в стиле Duolingo: каждый вопрос дает вклад от 0 до 1
+	// в зависимости от количества ошибок до первого правильного ответа.
+	// Фактор: 1.0 без ошибок; 0.7 при 1 ошибке; 0.4 при 2 ошибках; 0.1 при 3; 0 при >=4.
+	// Можно настроить формулой: max(0, 1 - 0.3*m), и затем ограничить минимумом 0.1 для m=3.
+	contributionSum := 0.0
+
+	// Собираем все шаги по вопросу для подсчета количества ошибок до первого правильного
+	stepsByQuestion := make(map[uint][]*domain.AttemptStep)
+	for _, st := range steps {
+		if st.QuestionID == nil {
+			continue
+		}
+		qid := *st.QuestionID
+		stepsByQuestion[qid] = append(stepsByQuestion[qid], st)
+	}
+
+	for qid, qSteps := range stepsByQuestion {
+		// Сортировка уже по step_order ASC у нас в выборке, но на всякий случай
+		// порядок сохранен, так как GetSteps делает Order("step_order ASC").
+		mistakes := 0
+		firstCorrectFound := false
+		var lastStep *domain.AttemptStep
+		for _, st := range qSteps {
+			lastStep = st
+			if st.Correct {
+				firstCorrectFound = true
+				break
+			}
+			mistakes++
+		}
+
+		if !firstCorrectFound {
+			// Нет правильного ответа — добавляем в список ошибок
+			question, err := s.questionRepo.GetWithChoices(ctx, qid)
+			if err == nil && lastStep != nil {
+				var responseData map[string]interface{}
+				json.Unmarshal(lastStep.Response, &responseData)
+
+				var yourChoiceIDs []uint
+				if raw, ok := responseData["choice_ids"]; ok {
+					switch v := raw.(type) {
+					case []interface{}:
+						for _, id := range v {
+							if idFloat, ok := id.(float64); ok {
+								yourChoiceIDs = append(yourChoiceIDs, uint(idFloat))
+							}
+						}
+					case []uint:
+						yourChoiceIDs = v
+					}
+				}
+
+				var correctChoiceIDs []uint
+				for _, choice := range question.Choices {
+					if choice.IsCorrect {
+						correctChoiceIDs = append(correctChoiceIDs, choice.ID)
+					}
+				}
+
+				wrongQuestions = append(wrongQuestions, &WrongQuestion{
+					QuestionID:       qid,
+					Prompt:           question.Prompt,
+					YourChoiceIDs:    yourChoiceIDs,
+					CorrectChoiceIDs: correctChoiceIDs,
+					Explanation:      question.Explanation,
+				})
+			}
+		}
+
+		// Рассчитываем вклад вопроса в точность
+		factor := 1.0 - 0.3*float64(mistakes)
+		if mistakes == 3 {
+			factor = 0.1
+		}
+		if factor < 0 {
+			factor = 0
+		}
+		contributionSum += factor
+	}
+
+	// Вычисляем итоговый балл (точность) с учетом числа ошибок
+	score := 0
+	if totalQuestions > 0 {
+		normalized := (contributionSum / float64(totalQuestions)) * 100.0
+		score = int(normalized + 0.5) // округление
+	} else {
+		// Только информационные карточки без квиза
+		score = 100
+	}
+
+	// Обновляем попытку
+	now := time.Now()
+	attempt.Status = "completed"
+	attempt.ResultScore = score
+	attempt.CompletedAt = &now
+
+	err = s.attemptRepo.Update(ctx, attempt)
+	if err != nil {
+		return nil, err
+	}
+
+	// Начисляем награду
+	level, err := s.levelRepo.GetByID(ctx, attempt.LevelID)
+	if err == nil && score >= 70 { // Минимум 70% для получения награды
+		rewardAmount := int64(level.RewardPoints)
+		err = s.rewardTxRepo.Create(ctx, &domain.RewardTx{
+			UserID:    attempt.UserID,
+			Amount:    rewardAmount,
+			Type:      "earn",
+			Reason:    "Level completion reward",
+			AttemptID: &attempt.ID,
+		})
+		if err != nil {
+			// Логируем ошибку, но не прерываем выполнение
+		}
+	}
+
+	// Обновляем streak и проверяем достижения
+	if s.userService != nil {
+		_ = s.userService.UpdateStreak(ctx, attempt.UserID)
+	}
+	if s.achievementService != nil && score >= 70 {
+		durationMs := int64(0)
+		if attempt.CompletedAt != nil {
+			durationMs = attempt.CompletedAt.Sub(attempt.StartedAt).Milliseconds()
+		}
+		eventData := map[string]interface{}{
+			"score":       score,
+			"level_id":    attempt.LevelID,
+			"duration_ms": durationMs,
+		}
+		_ = s.achievementService.CheckAndAwardAchievements(ctx, attempt.UserID, "level_completed", eventData)
+		if profile, err := s.userService.GetProfile(ctx, attempt.UserID); err == nil && profile != nil {
+			_ = s.achievementService.CheckAndAwardAchievements(ctx, attempt.UserID, "streak_updated", map[string]interface{}{
+				"streak": profile.Streak,
+			})
+		}
+	}
+
+	result := &AttemptResult{
+		Attempt:        attempt,
+		Score:          score,
+		TotalQuestions: totalQuestions,
+		CorrectAnswers: correctAnswers,
+		WrongQuestions: wrongQuestions,
+		Reward: &RewardInfo{
+			Diamonds: int64(level.RewardPoints),
+			TxID:     0, // Можно добавить ID транзакции
+			Reason:   "Level completion reward",
+		},
+	}
+
+	return result, nil
+}
+
+func (s *attemptService) GetActiveAttempt(ctx context.Context, userID, levelID uint) (*domain.Attempt, error) {
+	return s.attemptRepo.GetActiveByUserAndLevel(ctx, userID, levelID)
+}
+
+func (s *attemptService) GetUserAttempts(ctx context.Context, userID uint) ([]*domain.Attempt, error) {
+	return s.attemptRepo.GetByUserID(ctx, userID)
+}
+
+// Вспомогательная функция для сравнения массивов ID
+func compareChoiceIDs(userChoices, correctChoices []uint) bool {
+	if len(userChoices) != len(correctChoices) {
+		return false
+	}
+
+	// Создаем карты для быстрого поиска
+	userMap := make(map[uint]bool)
+	for _, id := range userChoices {
+		userMap[id] = true
+	}
+
+	correctMap := make(map[uint]bool)
+	for _, id := range correctChoices {
+		correctMap[id] = true
+	}
+
+	// Проверяем, что все элементы совпадают
+	for id := range userMap {
+		if !correctMap[id] {
+			return false
+		}
+	}
+
+	for id := range correctMap {
+		if !userMap[id] {
+			return false
+		}
+	}
+
+	return true
+}
+
+type rewardService struct {
+	rewardTxRepo repo.RewardTxRepo
+}
+
+func NewRewardService(rewardTxRepo repo.RewardTxRepo) RewardService {
+	return &rewardService{rewardTxRepo: rewardTxRepo}
+}
+
+func (s *rewardService) AwardDiamonds(ctx context.Context, userID uint, amount int64, reason string, attemptID *uint) error {
+	if amount <= 0 {
+		return errors.New("amount must be positive")
+	}
+
+	tx := &domain.RewardTx{
+		UserID:    userID,
+		Amount:    amount,
+		Type:      "earn",
+		Reason:    reason,
+		AttemptID: attemptID,
+	}
+
+	return s.rewardTxRepo.Create(ctx, tx)
+}
+
+func (s *rewardService) SpendDiamonds(ctx context.Context, userID uint, amount int64, reason string) error {
+	if amount <= 0 {
+		return errors.New("amount must be positive")
+	}
+
+	// Проверяем достаточность средств
+	hasEnough, err := s.HasEnoughDiamonds(ctx, userID, amount)
+	if err != nil {
+		return err
+	}
+	if !hasEnough {
+		return errors.New("insufficient funds")
+	}
+
+	tx := &domain.RewardTx{
+		UserID:    userID,
+		Amount:    -amount, // Отрицательное значение для списания
+		Type:      "spend",
+		Reason:    reason,
+		AttemptID: nil,
+	}
+
+	return s.rewardTxRepo.Create(ctx, tx)
+}
+
+func (s *rewardService) GetTransactionHistory(ctx context.Context, userID uint) ([]*domain.RewardTx, error) {
+	return s.rewardTxRepo.GetByUserID(ctx, userID)
+}
+
+func (s *rewardService) HasEnoughDiamonds(ctx context.Context, userID uint, amount int64) (bool, error) {
+	balance, err := s.rewardTxRepo.GetBalance(ctx, userID)
+	if err != nil {
+		return false, err
+	}
+	return balance >= amount, nil
+}
+
+// CancelAttempt устанавливает статус попытки как failed и проставляет CompletedAt
+func (s *attemptService) CancelAttempt(ctx context.Context, attemptID uint, userID uint) error {
+	attempt, err := s.attemptRepo.GetByID(ctx, attemptID)
+	if err != nil {
+		return err
+	}
+	if attempt.UserID != userID {
+		return errors.New("forbidden")
+	}
+	if attempt.Status != domain.AttemptInProgress {
+		return nil
+	}
+	now := time.Now()
+	attempt.Status = domain.AttemptFailed
+	attempt.CompletedAt = &now
+	return s.attemptRepo.Update(ctx, attempt)
+}
+
+type achievementService struct {
+	achievementRepo repo.AchievementRepo
+	userRepo        repo.UserRepo
+	attemptRepo     repo.AttemptRepo
+	rewardTxRepo    repo.RewardTxRepo
+}
+
+func NewAchievementService(
+	achievementRepo repo.AchievementRepo,
+	userRepo repo.UserRepo,
+	attemptRepo repo.AttemptRepo,
+	rewardTxRepo repo.RewardTxRepo,
+) AchievementService {
+	return &achievementService{
+		achievementRepo: achievementRepo,
+		userRepo:        userRepo,
+		attemptRepo:     attemptRepo,
+		rewardTxRepo:    rewardTxRepo,
+	}
+}
+
+func (s *achievementService) GetAllAchievements(ctx context.Context) ([]*domain.Achievement, error) {
+	return s.achievementRepo.GetAll(ctx)
+}
+
+func (s *achievementService) GetUserAchievements(ctx context.Context, userID uint) ([]*domain.Achievement, error) {
+	return s.achievementRepo.GetByUserID(ctx, userID)
+}
+
+func (s *achievementService) CheckAndAwardAchievements(ctx context.Context, userID uint, eventType string, data map[string]interface{}) error {
+	achievements, err := s.achievementRepo.GetAll(ctx)
+	if err != nil {
+		return err
+	}
+
+	st, err := s.collectUserStats(ctx, userID)
+	if err != nil {
+		return err
+	}
+
+	for _, achievement := range achievements {
+		if achievement.ShopPrice > 0 {
+			continue
+		}
+		has, err := s.achievementRepo.HasAchievement(ctx, userID, achievement.ID)
+		if err != nil || has {
+			continue
+		}
+		if s.shouldAward(achievement.Code, st, eventType, data) {
+			_ = s.achievementRepo.AwardToUser(ctx, userID, achievement.ID)
+		}
+	}
+	return nil
+}
+
+func (s *achievementService) GetAchievementProgress(ctx context.Context, userID, achievementID uint) (*AchievementProgress, error) {
+	achievement, err := s.achievementRepo.GetByID(ctx, achievementID)
+	if err != nil {
+		return nil, err
+	}
+
+	has, err := s.achievementRepo.HasAchievement(ctx, userID, achievementID)
+	if err != nil {
+		return nil, err
+	}
+
+	maxProgress := achievementMaxProgress(achievement.Code)
+	progress := 0
+	if has {
+		progress = maxProgress
+	} else {
+		st, err := s.collectUserStats(ctx, userID)
+		if err != nil {
+			return nil, err
+		}
+		progress = achievementProgress(achievement.Code, st)
+	}
+
+	return &AchievementProgress{
+		Achievement: achievement,
+		Progress:    progress,
+		MaxProgress: maxProgress,
+		IsCompleted: has,
+	}, nil
+}

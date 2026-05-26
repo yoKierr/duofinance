@@ -1,0 +1,58 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 240 10% 4%;
+    --foreground: 0 0% 96%;
+    --card: 240 6% 10%;
+    --card-foreground: 0 0% 96%;
+    --popover: 240 6% 10%;
+    --popover-foreground: 0 0% 96%;
+    --primary: 0 0% 9%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 240 4% 16%;
+    --secondary-foreground: 0 0% 96%;
+    --muted: 240 4% 16%;
+    --muted-foreground: 240 5% 65%;
+    --accent: 240 4% 16%;
+    --accent-foreground: 0 0% 96%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 240 4% 22%;
+    --input: 240 4% 22%;
+    --ring: 0 0% 9%;
+    --radius: 1rem;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-family: var(--font-nunito), sans-serif;
+  }
+}
+
+@layer components {
+  .finstart-button {
+    @apply font-bold uppercase tracking-wide transition-colors;
+  }
+
+  button.finstart-button {
+    border-radius: 0.5rem !important;
+  }
+
+  .finstart-button-primary {
+    @apply border border-zinc-400 bg-white text-neutral-950;
+    @apply hover:border-zinc-300 hover:bg-zinc-200 active:bg-zinc-300;
+  }
+
+  .finstart-button-secondary {
+    @apply border-2 border-zinc-400 bg-transparent text-zinc-100;
+    @apply hover:border-zinc-300 hover:bg-zinc-800;
+  }
+}

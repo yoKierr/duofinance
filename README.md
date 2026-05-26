@@ -40,40 +40,30 @@
 
 ## Showcase
 
-Ниже — блоки под скриншоты и GIF. Положите файлы в [`docs/showcase/`](docs/showcase/) и раскомментируйте нужные строки.
-
 ### Лендинг
 
-<!-- ![Лендинг — Hero](docs/showcase/landing-hero.png) -->
-<!-- ![Лендинг — карточки возможностей](docs/showcase/landing-features.gif) -->
-
-_Скриншот или GIF: главная страница, Hero, typewriter, карточки_
+![Лендинг — Hero](docs/showcase/landing-hero.jpg)
+![Лендинг — карточки возможностей](docs/showcase/landing-features.jpg)
 
 ---
 
 ### Обучение и уроки
 
-<!-- ![Карта уроков](docs/showcase/learn-map.png) -->
-<!-- ![Урок с квизом](docs/showcase/lesson-quiz.gif) -->
-
-_Скриншот или GIF: `/learn`, прохождение урока, прогресс-бар_
+![Карта уроков](docs/showcase/learn-map.jpg)
+![Урок с квизом](docs/showcase/lesson-quiz.jpg)
 
 ---
 
 ### Достижения и магазин
 
-<!-- ![Достижения](docs/showcase/achievements.png) -->
-<!-- ![Магазин](docs/showcase/shop.png) -->
-
-_Скриншоты: `/achievements`, `/shop`_
+![Достижения](docs/showcase/achievements.jpg)
+![Магазин](docs/showcase/shop.jpg)
 
 ---
 
 ### Профиль
 
-<!-- ![Профиль](docs/showcase/profile.png) -->
-
-_Скриншот: `/profile`, статистика и аватар_
+![Профиль](docs/showcase/profile.jpg)
 
 ---
 
